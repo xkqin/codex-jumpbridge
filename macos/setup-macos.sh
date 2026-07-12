@@ -180,7 +180,7 @@ show_missing_runtime() {
 on run argv
     set hostName to item 1 of argv
     set reasonText to item 2 of argv
-    set bodyText to reasonText & return & return & "缺少或不匹配：" & return & "~/.local/bin/codex（编辑器扩展二进制链接）" & return & "~/.local/bin/codex-code-mode-host" & return & return & "请先在 VS Code 或 Cursor 中连接 " & hostName & "，在 SSH 远程窗口的扩展页安装或更新：" & return & "openai.chatgpt（Codex - OpenAI's coding agent）" & return & return & "不需要先登录。安装完成后回到 Codex 发送：" & return & "继续安装并启动 Codex JumpBridge"
+    set bodyText to reasonText & return & return & "缺少或不匹配：" & return & "~/.local/bin/codex（JumpBridge app-server 启动器）" & return & "~/.local/bin/codex-jumpbridge-real（编辑器扩展二进制）" & return & "~/.local/bin/codex-code-mode-host" & return & return & "请先在 VS Code 或 Cursor 中连接 " & hostName & "，在 SSH 远程窗口的扩展页安装或更新：" & return & "openai.chatgpt（Codex - OpenAI's coding agent）" & return & return & "不需要先登录。安装完成后回到 Codex 发送：" & return & "继续安装并启动 Codex JumpBridge"
     display alert "集群缺少 Codex 运行文件" message bodyText as warning buttons {"知道了"} default button "知道了"
 end run
 APPLESCRIPT
@@ -192,7 +192,8 @@ prepare_remote_runtime() {
     [ -f "$helper" ] || return 5
     encoded="$(base64 < "$helper" | tr -d '\r\n')"
     RUNTIME_OUTPUT="$($SSH_WRAPPER "$HOST_ALIAS" "printf %s $encoded | base64 -d | bash" 2>/dev/null || true)"
-    if printf '%s' "$RUNTIME_OUTPUT" | grep -q 'CODEX_JUMPBRIDGE_CODE_MODE_HOST=READY'; then
+    if printf '%s' "$RUNTIME_OUTPUT" | grep -q 'CODEX_JUMPBRIDGE_CODE_MODE_HOST=READY' &&
+        printf '%s' "$RUNTIME_OUTPUT" | grep -q 'CODEX_JUMPBRIDGE_HOME_LAUNCHER=READY'; then
         return 0
     fi
     if printf '%s' "$RUNTIME_OUTPUT" | grep -q 'CODEX_JUMPBRIDGE_EDITOR_BUNDLE=NO_MATCHING_VERSION'; then

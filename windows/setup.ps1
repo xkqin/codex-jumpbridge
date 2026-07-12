@@ -213,7 +213,8 @@ function Prepare-RemoteRuntime([string]$Alias) {
     $result = Invoke-Remote $Alias "printf %s $encoded | base64 -d | bash"
     return [pscustomobject]@{
         Success = $result.ExitCode -eq 0 -and
-            $result.Output -match 'CODEX_JUMPBRIDGE_CODE_MODE_HOST=READY'
+            $result.Output -match 'CODEX_JUMPBRIDGE_CODE_MODE_HOST=READY' -and
+            $result.Output -match 'CODEX_JUMPBRIDGE_HOME_LAUNCHER=READY'
         Missing = $result.Output -match 'CODEX_JUMPBRIDGE_EDITOR_BUNDLE=MISSING'
         Mismatch = $result.Output -match 'CODEX_JUMPBRIDGE_EDITOR_BUNDLE=NO_MATCHING_VERSION'
         Detail = $result.Output.Trim()
@@ -230,7 +231,8 @@ function Show-MissingRuntime([string]$Alias, [bool]$Mismatch) {
 $reason
 
 缺少或不匹配：
-~/.local/bin/codex（编辑器扩展二进制链接）
+~/.local/bin/codex（JumpBridge app-server 启动器）
+~/.local/bin/codex-jumpbridge-real（编辑器扩展二进制）
 ~/.local/bin/codex-code-mode-host
 
 请先在 VS Code 或 Cursor 中连接 $Alias，在 SSH 远程窗口的扩展页安装或更新：

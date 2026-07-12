@@ -9,7 +9,14 @@ LOCAL_BIN="${HOME}/.local/bin"
 LOCAL_CODEX="${LOCAL_BIN}/codex"
 LOCAL_REAL_CODEX="${LOCAL_BIN}/codex-jumpbridge-real"
 LOCAL_CODE_HOST="${LOCAL_BIN}/codex-code-mode-host"
+LAUNCHER_MARKER='CODEX_JUMPBRIDGE_HOME_LAUNCHER'
 LEGACY_LAUNCHER_MARKER='codex-jumpbridge-real'
+
+is_managed_launcher() {
+    [ -f "$LOCAL_CODEX" ] || return 1
+    grep -Fq "$LAUNCHER_MARKER" "$LOCAL_CODEX" 2>/dev/null ||
+        grep -Fq "$LEGACY_LAUNCHER_MARKER" "$LOCAL_CODEX" 2>/dev/null
+}
 
 find_editor_codex() {
     find \
@@ -49,7 +56,7 @@ while IFS= read -r candidate; do
 done < <(find_editor_codex)
 
 if [ -z "$selected" ] && [ -x "$LOCAL_REAL_CODEX" ] &&
-    [ -f "$LOCAL_CODEX" ] && grep -Fq "$LEGACY_LAUNCHER_MARKER" "$LOCAL_CODEX"; then
+    is_managed_launcher; then
     selected="$(readlink -f "$LOCAL_REAL_CODEX" 2>/dev/null || true)"
 fi
 
@@ -72,7 +79,7 @@ if [ -e "$LOCAL_CODEX" ] || [ -L "$LOCAL_CODEX" ]; then
                 exit 6
                 ;;
         esac
-    elif grep -Fq "$LEGACY_LAUNCHER_MARKER" "$LOCAL_CODEX" 2>/dev/null; then
+    elif is_managed_launcher; then
         :
     elif cmp -s "$LOCAL_CODEX" "$selected"; then
         :
@@ -83,9 +90,20 @@ if [ -e "$LOCAL_CODEX" ] || [ -L "$LOCAL_CODEX" ]; then
     fi
 fi
 
+ln -sfn "$selected" "$LOCAL_REAL_CODEX"
+launcher_temp="$(mktemp "${LOCAL_BIN}/codex-jumpbridge-launcher.XXXXXX")"
+cat > "$launcher_temp" <<'LAUNCHER'
+#!/bin/sh
+# CODEX_JUMPBRIDGE_HOME_LAUNCHER
+REAL_CODEX="${HOME}/.local/bin/codex-jumpbridge-real"
+if [ "${1:-}" = 'app-server' ]; then
+    cd "$HOME" || exit 1
+fi
+exec "$REAL_CODEX" "$@"
+LAUNCHER
+chmod 755 "$launcher_temp"
 rm -f "$LOCAL_CODEX"
-ln -s "$selected" "$LOCAL_CODEX"
-rm -f "$LOCAL_REAL_CODEX"
+mv "$launcher_temp" "$LOCAL_CODEX"
 
 if [ ! -x "$LOCAL_CODE_HOST" ]; then
     if [ -z "$selected" ]; then
@@ -103,4 +121,5 @@ if [ ! -x "$LOCAL_CODEX" ] || [ ! -x "$LOCAL_CODE_HOST" ]; then
 fi
 
 printf 'CODEX_JUMPBRIDGE_REMOTE_CODEX=%s\n' "$(codex_version "$LOCAL_CODEX")"
+printf 'CODEX_JUMPBRIDGE_HOME_LAUNCHER=READY\n'
 printf 'CODEX_JUMPBRIDGE_CODE_MODE_HOST=READY\n'

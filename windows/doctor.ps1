@@ -70,10 +70,11 @@ if (Test-Path -LiteralPath $remotePreparePath) {
     $remotePrepareOutput = & $wrapper $HostAlias (
         "printf %s $remotePrepareEncoded | base64 -d | bash") 2>$null
     if ($LASTEXITCODE -eq 0 -and
-        $remotePrepareOutput -match 'CODEX_JUMPBRIDGE_CODE_MODE_HOST=READY') {
-        Report 'OK' 'Remote Codex runtime is ready'
+        $remotePrepareOutput -match 'CODEX_JUMPBRIDGE_CODE_MODE_HOST=READY' -and
+        $remotePrepareOutput -match 'CODEX_JUMPBRIDGE_HOME_LAUNCHER=READY') {
+        Report 'OK' 'Remote app-server launcher and Codex runtime are ready'
     } else {
-        Fail 'Remote code host is missing; open VS Code/Cursor on the cluster and rerun install.ps1'
+        Fail 'Remote app-server launcher or code host is missing; open VS Code/Cursor on the cluster and rerun install.ps1'
     }
 } else {
     Fail 'Remote preparation helper is missing; rerun install.ps1'
@@ -86,6 +87,20 @@ if ($LASTEXITCODE -eq 0 -and $codexProbe -match 'codex') {
     Report 'OK' ("Remote " + (($codexProbe | Select-Object -Last 1) -join ''))
 } else {
     Fail 'Remote Codex was not found in ~/.local/bin or PATH'
+}
+
+$appServerCwdProbe = & $wrapper $HostAlias (
+    'printf app-server,__CWD__=%s,__HOME__=%s "$PWD" "$HOME"') 2>$null
+$appServerCwdMatch = [regex]::Match(
+    ($appServerCwdProbe -join "`n"),
+    '__CWD__=([^,\r\n]+),__HOME__=([^\r\n]+)')
+if ($LASTEXITCODE -eq 0 -and
+    $appServerCwdMatch.Success -and
+    $appServerCwdMatch.Groups[1].Value.Trim() -eq
+        $appServerCwdMatch.Groups[2].Value.Trim()) {
+    Report 'OK' 'App-server starts at remote HOME'
+} else {
+    Fail 'App-server working directory is unstable; reinstall the current JumpBridge version'
 }
 
 $proxyUrl = $null

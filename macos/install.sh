@@ -254,7 +254,8 @@ remote_encoded="$(base64 < "$REMOTE_PREPARE_SOURCE" | tr -d '\r\n')"
 for alias in "${HOSTS[@]}"; do
     remote_output="$($TARGET_SSH "$alias" "printf %s $remote_encoded | base64 -d | bash" 2>&1)"
     remote_rc=$?
-    if ! printf '%s' "$remote_output" | grep -q 'CODEX_JUMPBRIDGE_CODE_MODE_HOST=READY'; then
+    if ! printf '%s' "$remote_output" | grep -q 'CODEX_JUMPBRIDGE_CODE_MODE_HOST=READY' ||
+        ! printf '%s' "$remote_output" | grep -q 'CODEX_JUMPBRIDGE_HOME_LAUNCHER=READY'; then
         if printf '%s' "$remote_output" | grep -q 'CODEX_JUMPBRIDGE_EDITOR_BUNDLE=MISSING'; then
             cat >&2 <<EOF
 
@@ -274,7 +275,7 @@ EOF
     if [ "$remote_rc" -ne 0 ]; then
         step WARN "Gateway returned ${remote_rc} after reporting READY on ${alias}; continuing"
     fi
-    step OK "Remote Codex runtime is ready on $alias"
+    step OK "Remote app-server launcher and Codex runtime are ready on $alias"
 done
 
 if [ "$SKIP_DOCTOR" -eq 0 ]; then

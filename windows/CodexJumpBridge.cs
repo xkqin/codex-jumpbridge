@@ -26,7 +26,7 @@ internal static class CodexJumpBridge
             (args[0] == "--codex-jumpbridge-version" ||
              args[0] == "--codex-t-wrapper-version"))
         {
-            Console.WriteLine("codex-jumpbridge 1.3.1");
+            Console.WriteLine("codex-jumpbridge 1.3.2");
             return 0;
         }
 
@@ -245,9 +245,13 @@ internal static class CodexJumpBridge
                 string startCommand =
                     "printf '%s%s\\n' " + PosixSingleQuote(startMarkerFirst) + " " +
                     PosixSingleQuote(startMarkerSecond) + "; ";
+                string workingDirectoryCommand = launchesAppServer
+                    ? "cd \"$HOME\" || exit 1; "
+                    : String.Empty;
                 if (isStreamingProxy)
                 {
                     wrappedCommand = startCommand +
+                        workingDirectoryCommand +
                         proxyExports +
                         "export CODEX_HOME=\"${CODEX_HOME:-$HOME/.codex}\"; " +
                         "exec /bin/sh -c " + PosixSingleQuote(remoteCommand);
@@ -255,6 +259,7 @@ internal static class CodexJumpBridge
                 else
                 {
                     wrappedCommand = startCommand +
+                        workingDirectoryCommand +
                         proxyExports +
                         "/bin/sh -c " + PosixSingleQuote(remoteCommand) +
                         "; __codex_t_rc=$?; printf '%s%s%d\\n' " +

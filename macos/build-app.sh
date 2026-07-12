@@ -2,7 +2,7 @@
 
 set -eu
 
-VERSION="${1:-1.3.1}"
+VERSION="${1:-1.3.2}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 OUTPUT_DIR="${2:-${ROOT}/dist}"

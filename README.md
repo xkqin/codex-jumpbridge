@@ -81,7 +81,8 @@ SSH Host 后，填写集群计算节点访问 OpenAI 的专用代理；输入框
 
 ```text
 [OK] Gateway shell bridge works
-[OK] Remote Codex runtime is ready
+[OK] Remote app-server launcher and Codex runtime are ready
+[OK] App-server starts at remote HOME
 [OK] OpenAI route works (HTTP 401)
 
 Status: READY
@@ -91,8 +92,8 @@ Status: READY
 
 也可以打开 [GitHub Releases](https://github.com/xkqin/codex-jumpbridge/releases/latest)：
 
-- **Windows 10/11：**下载并双击 `Codex-JumpBridge-Windows-v1.3.1.exe`。
-- **macOS 11+：**下载 `Codex-JumpBridge-macOS-v1.3.1.dmg`，将 App 拖入“应用程序”后运行。
+- **Windows 10/11：**下载并双击 `Codex-JumpBridge-Windows-v1.3.2.exe`。
+- **macOS 11+：**下载 `Codex-JumpBridge-macOS-v1.3.2.dmg`，将 App 拖入“应用程序”后运行。
 
 升级已有版本时，请先完全退出 Codex Desktop，避免正在使用的 SSH wrapper 无法替换。
 发布包不包含 Host、IP、代理地址或私钥。macOS App 尚未签名，首次运行请在
@@ -120,8 +121,9 @@ Finder 中右键 App 并选择“打开”。
 
 Codex Desktop 通常通过标准 SSH `exec` 启动远端 app-server；T 集群网关更接近
 “先进入 `sh`，再从 stdin 发送命令”，直接 `exec` 会卡住，端口转发也被禁用。
-JumpBridge 只适配命令传输和 app-server 代理，不改写远端 `HOME`、`PWD` 或项目路径；
-最终工作目录由集群网关和 Codex 自己决定。
+JumpBridge 不要求用户手动修改项目路径，也不改写普通 SSH 命令的工作目录。为保证远端
+会话能够创建和续接，仅在启动 Codex app-server 时进入远端 `$HOME`；项目路径仍由 Codex
+和集群网关管理。
 
 Codex 需要的是**无 TTY 的原始双向数据流**：它执行类似 `ssh <Host> <command>`，
 再通过 stdin/stdout 与 app-server 通信。T 集群账号不是普通计算节点 `sshd`，网关不接受

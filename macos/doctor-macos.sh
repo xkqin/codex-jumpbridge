@@ -91,10 +91,11 @@ prepare_path="${BIN_DIR}/codex-jumpbridge-remote-prepare"
 if [ -f "$prepare_path" ]; then
     encoded="$(base64 < "$prepare_path" | tr -d '\r\n')"
     prepare_output="$($WRAPPER "$HOST_ALIAS" "printf %s $encoded | base64 -d | bash" 2>/dev/null || true)"
-    if printf '%s' "$prepare_output" | grep -q 'CODEX_JUMPBRIDGE_CODE_MODE_HOST=READY'; then
-        report OK 'Remote Codex runtime is ready'
+    if printf '%s' "$prepare_output" | grep -q 'CODEX_JUMPBRIDGE_CODE_MODE_HOST=READY' &&
+        printf '%s' "$prepare_output" | grep -q 'CODEX_JUMPBRIDGE_HOME_LAUNCHER=READY'; then
+        report OK 'Remote app-server launcher and Codex runtime are ready'
     else
-        fail 'Remote code host is missing; open VS Code/Cursor on the cluster and rerun install.sh'
+        fail 'Remote app-server launcher or code host is missing; open VS Code/Cursor on the cluster and rerun install.sh'
     fi
 else
     fail 'Remote preparation helper is missing; rerun install.sh'
@@ -106,6 +107,23 @@ if printf '%s' "$codex_probe" | grep -q 'codex'; then
 else
     fail 'Remote Codex was not found in VS Code/Cursor or ~/.local/bin'
 fi
+
+app_server_cwd_probe="$($WRAPPER "$HOST_ALIAS" 'printf app-server,__CWD__=%s,__HOME__=%s "$PWD" "$HOME"' 2>/dev/null || true)"
+case "$app_server_cwd_probe" in
+    *app-server,__CWD__=*,__HOME__=*)
+        app_server_cwd="${app_server_cwd_probe#*__CWD__=}"
+        app_server_cwd="${app_server_cwd%%,__HOME__=*}"
+        app_server_home="${app_server_cwd_probe##*__HOME__=}"
+        if [ -n "$app_server_cwd" ] && [ "$app_server_cwd" = "$app_server_home" ]; then
+            report OK 'App-server starts at remote HOME'
+        else
+            fail 'App-server working directory is unstable; reinstall the current JumpBridge version'
+        fi
+        ;;
+    *)
+        fail 'App-server working-directory probe failed'
+        ;;
+esac
 
 proxy_url="$(read_proxy "$HOST_ALIAS" 2>/dev/null || true)"
 proxy_prefix=''
