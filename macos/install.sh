@@ -132,8 +132,7 @@ for required in \
     "$SCRIPT_DIR/codex-jumpbridge.sh" \
     "$SCRIPT_DIR/setup-macos.sh" \
     "$SCRIPT_DIR/doctor-macos.sh" \
-    "$REMOTE_PREPARE_SOURCE" \
-    "$SCRIPT_DIR/repair-thread-assignments.sh"; do
+    "$REMOTE_PREPARE_SOURCE"; do
     if [ ! -f "$required" ]; then
         printf 'Required file missing: %s\n' "$required" >&2
         exit 1
@@ -176,17 +175,13 @@ cp "$SCRIPT_DIR/codex-jumpbridge.sh" "$TARGET_SSH"
 cp "$SCRIPT_DIR/setup-macos.sh" "${BIN_DIR}/codex-jumpbridge-setup"
 cp "$SCRIPT_DIR/doctor-macos.sh" "${BIN_DIR}/codex-jumpbridge-doctor"
 cp "$REMOTE_PREPARE_SOURCE" "${BIN_DIR}/codex-jumpbridge-remote-prepare"
-cp "$SCRIPT_DIR/repair-thread-assignments.sh" \
-    "${BIN_DIR}/codex-jumpbridge-repair-thread-assignments"
 rm -f \
-    "${BIN_DIR}/codex-jumpbridge-repair-project-path" \
-    "${BIN_DIR}/codex-jumpbridge-repair-sidebar"
+    "${BIN_DIR}/codex-jumpbridge-repair-thread-assignments"
 chmod 755 \
     "$TARGET_SSH" \
     "${BIN_DIR}/codex-jumpbridge-setup" \
     "${BIN_DIR}/codex-jumpbridge-doctor" \
-    "${BIN_DIR}/codex-jumpbridge-remote-prepare" \
-    "${BIN_DIR}/codex-jumpbridge-repair-thread-assignments"
+    "${BIN_DIR}/codex-jumpbridge-remote-prepare"
 
 hosts_file="${CONFIG_DIR}/hosts.txt"
 hosts_temp="$(mktemp "${CONFIG_DIR}/hosts.XXXXXX")"
@@ -259,8 +254,7 @@ remote_encoded="$(base64 < "$REMOTE_PREPARE_SOURCE" | tr -d '\r\n')"
 for alias in "${HOSTS[@]}"; do
     remote_output="$($TARGET_SSH "$alias" "printf %s $remote_encoded | base64 -d | bash" 2>&1)"
     remote_rc=$?
-    if ! printf '%s' "$remote_output" | grep -q 'CODEX_JUMPBRIDGE_CODE_MODE_HOST=READY' ||
-        ! printf '%s' "$remote_output" | grep -q 'CODEX_JUMPBRIDGE_HOME_LAUNCHER=READY'; then
+    if ! printf '%s' "$remote_output" | grep -q 'CODEX_JUMPBRIDGE_CODE_MODE_HOST=READY'; then
         if printf '%s' "$remote_output" | grep -q 'CODEX_JUMPBRIDGE_EDITOR_BUNDLE=MISSING'; then
             cat >&2 <<EOF
 
@@ -280,7 +274,7 @@ EOF
     if [ "$remote_rc" -ne 0 ]; then
         step WARN "Gateway returned ${remote_rc} after reporting READY on ${alias}; continuing"
     fi
-    step OK "Remote home launcher and codex-code-mode-host are ready on $alias"
+    step OK "Remote Codex runtime is ready on $alias"
 done
 
 if [ "$SKIP_DOCTOR" -eq 0 ]; then

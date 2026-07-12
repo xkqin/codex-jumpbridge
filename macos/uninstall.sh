@@ -34,9 +34,7 @@ rm -f \
     "${BIN_DIR}/codex-jumpbridge-setup" \
     "${BIN_DIR}/codex-jumpbridge-doctor" \
     "${BIN_DIR}/codex-jumpbridge-remote-prepare" \
-    "${BIN_DIR}/codex-jumpbridge-repair-thread-assignments" \
-    "${BIN_DIR}/codex-jumpbridge-repair-project-path" \
-    "${BIN_DIR}/codex-jumpbridge-repair-sidebar"
+    "${BIN_DIR}/codex-jumpbridge-repair-thread-assignments"
 
 remove_path_block() {
     local profile="$1"

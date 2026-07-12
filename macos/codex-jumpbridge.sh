@@ -4,7 +4,7 @@
 
 set -u
 
-VERSION='1.3.0'
+VERSION='1.3.1'
 REAL_SSH="${CODEX_JUMPBRIDGE_REAL_SSH:-/usr/bin/ssh}"
 CONFIG_DIR="${HOME}/.codex-jumpbridge"
 HOSTS_FILE="${CONFIG_DIR}/hosts.txt"
@@ -206,11 +206,10 @@ completion_first="${completion_prefix:0:$completion_split}"
 completion_second="${completion_prefix:$completion_split}"
 
 start_command="printf '%s%s\\n' $(posix_quote "$start_first") $(posix_quote "$start_second"); "
-home_command='cd "$HOME" || exit 1; '
 if [ "$is_streaming" -eq 1 ]; then
-    wrapped_command="${start_command}${home_command}${proxy_exports}export CODEX_HOME=\"\${CODEX_HOME:-\$HOME/.codex}\"; exec /bin/sh -c $(posix_quote "$remote_command")"
+    wrapped_command="${start_command}${proxy_exports}export CODEX_HOME=\"\${CODEX_HOME:-\$HOME/.codex}\"; exec /bin/sh -c $(posix_quote "$remote_command")"
 else
-    wrapped_command="${start_command}${home_command}${proxy_exports}/bin/sh -c $(posix_quote "$remote_command"); __codex_jumpbridge_rc=\$?; printf '%s%s%d\\n' $(posix_quote "$completion_first") $(posix_quote "$completion_second") \"\$__codex_jumpbridge_rc\""
+    wrapped_command="${start_command}${proxy_exports}/bin/sh -c $(posix_quote "$remote_command"); __codex_jumpbridge_rc=\$?; printf '%s%s%d\\n' $(posix_quote "$completion_first") $(posix_quote "$completion_second") \"\$__codex_jumpbridge_rc\""
 fi
 bootstrap="exec /bin/sh -c $(posix_quote "$wrapped_command")"
 

@@ -31,8 +31,7 @@ function Invoke-RemotePrepare(
     $output = & $Wrapper $Alias "printf %s $encoded | base64 -d | bash" 2>&1
     $wrapperExitCode = $LASTEXITCODE
     $outputText = $output | Out-String
-    if ($outputText -notmatch 'CODEX_JUMPBRIDGE_CODE_MODE_HOST=READY' -or
-        $outputText -notmatch 'CODEX_JUMPBRIDGE_HOME_LAUNCHER=READY') {
+    if ($outputText -notmatch 'CODEX_JUMPBRIDGE_CODE_MODE_HOST=READY') {
         if ($outputText -match 'CODEX_JUMPBRIDGE_EDITOR_BUNDLE=MISSING') {
             throw @"
 Remote VS Code/Cursor OpenAI extension is missing on $Alias.
@@ -53,7 +52,7 @@ Update openai.chatgpt in the VS Code/Cursor SSH window, then run install.ps1 aga
     if ($wrapperExitCode -ne 0) {
         Write-Step 'WARN' "Gateway returned $wrapperExitCode after reporting READY on $Alias; continuing"
     }
-    Write-Step 'OK' "Remote home launcher and codex-code-mode-host are ready on $Alias"
+    Write-Step 'OK' "Remote Codex runtime is ready on $Alias"
 }
 
 function Get-SshAliases([string]$Path) {
@@ -144,7 +143,7 @@ $bundledVersion = if (Test-Path -LiteralPath $bundledWrapper) {
 } else {
     ''
 }
-if ($bundledVersion -ne 'codex-jumpbridge 1.3.0') {
+if ($bundledVersion -ne 'codex-jumpbridge 1.3.1') {
     & (Join-Path $PSScriptRoot 'build.ps1') | Out-Null
     Write-Step 'OK' 'Built Codex JumpBridge'
 } else {
@@ -157,7 +156,7 @@ $backupDir = Join-Path $configDir 'backup'
 New-Item -ItemType Directory -Force -Path $binDir, $configDir, $backupDir | Out-Null
 
 $targetSsh = Join-Path $binDir 'ssh.exe'
-$expectedVersion = 'codex-jumpbridge 1.3.0'
+$expectedVersion = 'codex-jumpbridge 1.3.1'
 $installedVersion = if (Test-Path -LiteralPath $targetSsh) {
     ((& $targetSsh --codex-jumpbridge-version 2>$null) | Out-String).Trim()
 } else {
@@ -183,27 +182,14 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'setup.ps1') -Destination (
     Join-Path $binDir 'codex-jumpbridge-setup.ps1') -Force
 Copy-Item -LiteralPath $remotePrepareSource -Destination (
     Join-Path $binDir 'codex-jumpbridge-remote-prepare.sh') -Force
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'repair-thread-assignments.ps1') -Destination (
-    Join-Path $binDir 'codex-jumpbridge-repair-thread-assignments.ps1') -Force
 
-foreach ($taskName in @(
-    'CodexJumpBridge-ThreadAssignmentRepair',
-    'CodexJumpBridge-ProjectPathRepair',
-    'CodexJumpBridge-SidebarRepair'
-)) {
-    $legacyTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-    if ($legacyTask) {
-        Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
-    }
+$legacyTaskName = 'CodexJumpBridge-ThreadAssignmentRepair'
+if (Get-ScheduledTask -TaskName $legacyTaskName -ErrorAction SilentlyContinue) {
+    Stop-ScheduledTask -TaskName $legacyTaskName -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $legacyTaskName -Confirm:$false
 }
-foreach ($legacyHelper in @(
-    'codex-jumpbridge-repair-project-path.ps1',
-    'codex-jumpbridge-repair-sidebar.ps1'
-)) {
-    Remove-Item -LiteralPath (Join-Path $binDir $legacyHelper) `
-        -Force -ErrorAction SilentlyContinue
-}
+Remove-Item -LiteralPath (Join-Path $binDir 'codex-jumpbridge-repair-thread-assignments.ps1') `
+    -Force -ErrorAction SilentlyContinue
 
 $hostsPath = Join-Path $configDir 'hosts.txt'
 $enabledHosts = [Collections.Generic.List[string]]::new()

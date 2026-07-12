@@ -23,26 +23,17 @@ if ($backup) {
 
 foreach ($helper in @(
     'codex-jumpbridge-doctor.ps1',
-    'codex-jumpbridge-history.ps1',
     'codex-jumpbridge-setup.ps1',
     'codex-jumpbridge-remote-prepare.sh',
-    'codex-jumpbridge-repair-thread-assignments.ps1',
-    'codex-jumpbridge-repair-project-path.ps1',
-    'codex-jumpbridge-repair-sidebar.ps1'
+    'codex-jumpbridge-repair-thread-assignments.ps1'
 )) {
     Remove-Item -LiteralPath (Join-Path (Split-Path $wrapper) $helper) -Force -ErrorAction SilentlyContinue
 }
 
-foreach ($taskName in @(
-    'CodexJumpBridge-ThreadAssignmentRepair',
-    'CodexJumpBridge-ProjectPathRepair',
-    'CodexJumpBridge-SidebarRepair'
-)) {
-    $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-    if ($task) {
-        Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
-    }
+$legacyTaskName = 'CodexJumpBridge-ThreadAssignmentRepair'
+if (Get-ScheduledTask -TaskName $legacyTaskName -ErrorAction SilentlyContinue) {
+    Stop-ScheduledTask -TaskName $legacyTaskName -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $legacyTaskName -Confirm:$false
 }
 
 Write-Host '[OK] SSH config, keys, remote files, and local Codex history were not changed.'

@@ -10,7 +10,7 @@ using System.Windows.Forms;
 
 internal static class CodexJumpBridgeSetup
 {
-    private const string Version = "1.3.0";
+    private const string Version = "1.3.1";
     private const string PayloadResource = "CodexJumpBridge.Payload";
 
     [STAThread]

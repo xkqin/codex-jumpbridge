@@ -87,29 +87,12 @@ else
     fail 'Remote shell probe failed; verify the host alias and key permissions'
 fi
 
-home_probe="$($WRAPPER "$HOST_ALIAS" 'printf "__CODEX_JUMPBRIDGE_CWD__=%s__CODEX_JUMPBRIDGE_HOME__=%s__CODEX_JUMPBRIDGE_END__" "$PWD" "$HOME"' 2>/dev/null || true)"
-remote_cwd="${home_probe#*__CODEX_JUMPBRIDGE_CWD__=}"
-remote_cwd="${remote_cwd%%__CODEX_JUMPBRIDGE_HOME__=*}"
-remote_home="${home_probe#*__CODEX_JUMPBRIDGE_HOME__=}"
-remote_home="${remote_home%%__CODEX_JUMPBRIDGE_END__*}"
-case "$remote_home" in
-    /mnt/petrelfs/*)
-        if [ "$remote_cwd" = "$remote_home" ]; then
-            report OK "Remote commands start in $remote_home"
-        else
-            fail 'Remote commands do not start in the remote home; update JumpBridge'
-        fi
-        ;;
-    *) fail 'Remote commands do not start in /mnt/petrelfs home; update JumpBridge' ;;
-esac
-
 prepare_path="${BIN_DIR}/codex-jumpbridge-remote-prepare"
 if [ -f "$prepare_path" ]; then
     encoded="$(base64 < "$prepare_path" | tr -d '\r\n')"
     prepare_output="$($WRAPPER "$HOST_ALIAS" "printf %s $encoded | base64 -d | bash" 2>/dev/null || true)"
-    if printf '%s' "$prepare_output" | grep -q 'CODEX_JUMPBRIDGE_CODE_MODE_HOST=READY' &&
-        printf '%s' "$prepare_output" | grep -q 'CODEX_JUMPBRIDGE_HOME_LAUNCHER=READY'; then
-        report OK 'Remote home launcher and codex-code-mode-host are ready'
+    if printf '%s' "$prepare_output" | grep -q 'CODEX_JUMPBRIDGE_CODE_MODE_HOST=READY'; then
+        report OK 'Remote Codex runtime is ready'
     else
         fail 'Remote code host is missing; open VS Code/Cursor on the cluster and rerun install.sh'
     fi
@@ -117,7 +100,7 @@ else
     fail 'Remote preparation helper is missing; rerun install.sh'
 fi
 
-codex_probe="$($WRAPPER "$HOST_ALIAS" 'PATH="${CODEX_INSTALL_DIR:-$HOME/.local/bin}:$PATH"; export PATH; command -v codex >/dev/null && codex --version' 2>/dev/null || true)"
+codex_probe="$($WRAPPER "$HOST_ALIAS" 'PATH="$HOME/.local/bin:$PATH"; export PATH; command -v codex >/dev/null && codex --version' 2>/dev/null || true)"
 if printf '%s' "$codex_probe" | grep -q 'codex'; then
     report OK "Remote $(printf '%s\n' "$codex_probe" | tail -n 1)"
 else
@@ -146,5 +129,4 @@ if [ "$FAILED" -ne 0 ]; then
 fi
 
 printf 'Status: READY\n'
-printf 'Restart Codex Desktop, add this SSH host, then open /mnt/petrelfs/<user>.\n'
-printf 'Codex may display the canonical /mnt/hwfile/<user> path; remote commands still use petrelfs.\n'
+printf 'Restart Codex Desktop, add this SSH host, then choose the remote folder you need.\n'
