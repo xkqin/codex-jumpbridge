@@ -1,0 +1,222 @@
+<div align="center">
+
+# Codex JumpBridge
+
+**让 Codex Desktop 穿过不支持标准 SSH exec 的 T 集群跳板机。**
+
+![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows)
+![macOS](https://img.shields.io/badge/macOS-Intel%20%7C%20Apple%20Silicon-111111?logo=apple)
+![Codex](https://img.shields.io/badge/Codex-Desktop-111111)
+![License](https://img.shields.io/badge/License-MIT-2ea44f)
+
+</div>
+
+Codex JumpBridge 是按需启动的 SSH 兼容层，不是后台服务。它把 Codex Desktop
+的远程命令转换成 T 集群网关能够接受的 `sh + stdin`，并保持 app-server 的
+双向数据流。安装时会自动启用 `~/.ssh/config` 中识别到的全部 T 集群跳板别名；
+普通 SSH Host 继续由系统 OpenSSH 直连，不受影响。支持 Windows 与 macOS。
+识别依据 SSH alias 的 `jump-t...` 命名或 `ssh -G` 展开后的多段 User 路由格式；
+安装器不会记录、展示或提交跳板地址和后端节点地址。
+
+> [!IMPORTANT]
+> **新建远程项目时，请手动把“文件夹路径”改为 `/mnt/petrelfs/<你的用户名>`。**
+>
+> Codex 经常自动填入同名的 `/mnt/hwfile/<你的用户名>`。两者在 T 集群上指向
+> 同一物理目录，但 VS Code/Cursor 的历史 channel 通常记录逻辑家目录
+> `/mnt/petrelfs/...`。直接用 `hwfile` 创建项目可能导致旧 channel 点击后被重新
+> 归组，看起来像从左侧消失。请在点击创建前手动改回 `petrelfs`。
+>
+> | 正确：手动填写 `petrelfs` | 错误：接受自动填入的 `hwfile` |
+> | --- | --- |
+> | ![Correct petrelfs project path](docs/assets/project-path-petrelfs-correct.png) | ![Wrong hwfile project path](docs/assets/project-path-hwfile-wrong.png) |
+>
+> 项目创建后，Codex 仍可能用 `realpath` 把显示路径规范化成 `hwfile`，这是正常的；
+> JumpBridge 会让命令继续从 `petrelfs` 执行。旧 channel 的归组修复见文末 Q&A。
+
+## 如何安装
+
+打开 [GitHub Releases](https://github.com/xkqin/codex-jumpbridge/releases/latest)：
+
+- **Windows 10/11：**下载并双击 `Codex-JumpBridge-Windows-v1.3.0.exe`。
+- **macOS 11+：**下载 `Codex-JumpBridge-macOS-v1.3.0.dmg`，将 App 拖入“应用程序”后运行。
+
+两个安装程序都会读取本机 `~/.ssh/config` 并打开原生设置界面。代理输入框默认
+为空，需要用户填写**集群计算节点访问 OpenAI 的专用代理**。发布包不包含
+Host、IP、代理地址或私钥。macOS App 尚未签名，首次运行请在 Finder 中右键 App
+并选择“打开”。
+
+**1. 选择 SSH Host，填写集群专用代理**
+
+![JumpBridge setup with an empty proxy field](docs/assets/setup-ui-empty.png)
+
+设置页会读取 `~/.ssh/config` 中的全部连接，并把推荐网关排在前面。选择要连接的
+SSH Host 后，填写集群计算节点访问 OpenAI 的专用代理；输入框默认留空且地址被遮蔽。
+
+**2. 可选：从 VS Code/Cursor 检测并验证**
+
+![JumpBridge setup after detecting the proxy](docs/assets/setup-ui-detected.png)
+
+若该集群已在 VS Code/Cursor 中正常使用，可点击“从 VS Code / Cursor 检测”。检测
+成功后先点“测试连接”，确认集群能够访问 OpenAI，再点“保存设置”。该代理只注入
+远端 Codex app-server，不会成为本机代理、SSH 代理或跳板地址。
+
+## 一句话安装
+
+在本机 Codex 中发送：
+
+```text
+请安装并启动 https://github.com/xkqin/codex-jumpbridge 。阅读 README 后自动判断 Windows/macOS，扫描 ~/.ssh/config，把符合 T 集群 alias 或多段 User 路由格式的全部 Host 一次配置完成。只检查 IdentityFile 是否存在，不读取私钥。提示我填写“集群计算节点访问 OpenAI 的专用代理”，不要使用或展示仓库内置地址；缺少远端运行文件时按 README 的 Q&A 引导安装 openai.chatgpt，不安装独立 CLI。最后逐个 Host 运行 doctor，全部 READY 才算完成。
+```
+
+安装器会弹出平台原生设置页：Windows 使用设置窗口，macOS 使用系统对话框。
+代理和远端运行文件都通过后，才会显示：
+
+```text
+[OK] Gateway shell bridge works
+[OK] Remote commands start in /mnt/petrelfs/<用户名>
+[OK] Remote codex-code-mode-host is ready
+[OK] OpenAI route works (HTTP 401)
+
+Status: READY
+```
+
+## 使用前准备
+
+1. Windows 10/11 或 macOS，并已安装 Codex Desktop。
+2. 本机 `~/.ssh/config` 已配置可用的 T 集群跳板机 `Host`。
+3. 每位用户都要有**自己的**密钥对，例如本机 `~/.ssh/id_rsa` 和 `id_rsa.pub`。
+   `IdentityFile` 指向私钥，公钥按 T 集群/飞书文档登记。不要复制同事的私钥，
+   也不要把私钥上传到集群共享目录、GitHub 或对话。
+4. 从团队内部文档获取**集群计算节点访问 OpenAI 的专用代理**；本项目不内置或公开地址。
+5. 远端 VS Code/Cursor 已安装 `openai.chatgpt` 扩展；不要求先登录。
+
+安装器只检查 `IdentityFile` 引用的私钥文件是否存在，不读取文件内容。缺少时会
+在终端或设置 UI 中停止并提示，不会尝试生成、复制或下载私钥。
+
+> [!IMPORTANT]
+> 这里的代理是**集群计算节点访问 OpenAI 的专用代理**，不是本机
+> 代理、SSH 跳板地址，也不会把流量转回 `localhost`。JumpBridge 只把它注入
+> 远端 Codex app-server，不修改集群 `.bashrc`，不影响训练、Git 或普通 SSH。
+
+## 工作原理
+
+Codex Desktop 通常通过标准 SSH `exec` 启动远端 app-server；T 集群网关更接近
+“先进入 `sh`，再从 stdin 发送命令”，直接 `exec` 会卡住，端口转发也被禁用。
+网关默认把非交互会话放在 `/mnt/hwfile/<用户名>`；JumpBridge 1.3 起会在启动
+app-server 前恢复逻辑家目录和 `PWD=/mnt/petrelfs/<用户名>`。Codex Desktop 仍可能用
+`realpath` 把项目根记录成对应的 `/mnt/hwfile/<用户名>`，这不会改变远端命令的实际工作目录。
+
+Codex 需要的是**无 TTY 的原始双向数据流**：它执行类似 `ssh <Host> <command>`，
+再通过 stdin/stdout 与 app-server 通信。T 集群账号不是普通计算节点 `sshd`，网关不接受
+这种标准 exec channel，只提供登录 shell。此时运行 `tty` 通常会得到 `not a tty`；强制
+`ssh -t` 也不能解决，因为 PTY 会加入终端控制和换行转换，破坏 app-server 的协议流，
+而且仍绕不过网关不支持 exec/forward 的限制。JumpBridge 不申请 TTY，而是把请求改写为：
+
+```text
+Codex 的 ssh exec 请求 → 登录 T 集群 shell → 从 stdin 发送命令 → 保持原始双向流
+```
+
+```mermaid
+flowchart LR
+    A["Codex Desktop"] --> B["Codex JumpBridge"]
+    B --> C["系统 OpenSSH"]
+    C --> D["T 集群跳板机"]
+    D --> E["计算节点 sh"]
+    E --> F["Codex app-server"]
+    F --> G["集群 OpenAI 专用代理"]
+```
+
+VS Code/Cursor 与 Codex Desktop 共用远端 `~/.codex`，因此集群对话历史可见；
+JumpBridge 不复制或合并本机已有对话。项目对话归组修复器只读取每个远端会话首行的
+`id` 和 `cwd`，再写入 Codex Desktop 自带的 `thread-project-assignments` 本机映射。
+远端会话内容和本机其他对话都不会被修改。
+
+## 手动安装
+
+**Windows PowerShell**
+
+```powershell
+.\windows\install.ps1
+
+# 已知代理时可无交互安装
+.\windows\install.ps1 -ProxyUrl '<集群提供的 OpenAI 专用代理 URL>'
+
+~/.local/bin/codex-jumpbridge-setup.ps1
+~/.local/bin/codex-jumpbridge-doctor.ps1 -HostAlias <SSH Host>
+```
+
+**macOS Terminal**
+
+```bash
+chmod +x macos/install.sh
+./macos/install.sh
+
+# 已知代理时可无交互安装
+./macos/install.sh --proxy '<集群提供的 OpenAI 专用代理 URL>'
+
+~/.local/bin/codex-jumpbridge-setup --host <SSH Host>
+~/.local/bin/codex-jumpbridge-doctor --host <SSH Host>
+```
+
+安装成功后重启 Codex Desktop，在“设置 → 连接 → SSH”中添加同一个 Host，再打开
+`/mnt/petrelfs/<远端用户名>`。如果 Codex 将显示路径规范化为 `/mnt/hwfile/<远端用户名>`
+属于正常现象；JumpBridge 会继续让远端命令从 `/mnt/petrelfs/<远端用户名>` 执行。
+
+## 验证效果
+
+| SSH 项目在线 | 远端目录可访问 |
+| --- | --- |
+| ![Codex SSH project connected](docs/assets/codex-ssh-connected.png) | ![Remote cluster path](docs/assets/remote-project-path.png) |
+
+## 安全边界
+
+- 不读取、复制或上传 private key，也不修改 `~/.ssh/config`。
+- 代理保存在本机并同步给识别出的 T 集群 Host，不接受 URL 内嵌用户名或密码。
+- 不安装后台常驻服务，不复制本机 Codex 历史。
+- 不自动下载未知远端二进制；缺少编辑器运行包时明确引导用户安装。
+- 安装前备份目标 SSH wrapper；Windows 用 `windows/uninstall.ps1`，macOS 用 `macos/uninstall.sh` 恢复。
+
+> [!NOTE]
+> 本项目针对 T 集群网关的实际行为开发，并非 OpenAI 官方项目。
+
+## 常见问题（Q&A）
+
+### Q：提示“缺少远端运行文件”怎么办？
+
+> [!WARNING]
+> **原因：**该 SSH 远端从未安装或尚未更新 VS Code/Cursor 的 `openai.chatgpt` 扩展。
+> **处理：**在 VS Code/Cursor 的 SSH 远程窗口安装或更新 `@id:openai.chatgpt`，无需登录；
+> 然后回到 Codex 说“继续安装 Codex JumpBridge”，让安装器重新准备并运行 doctor。
+
+### Q：旧 channel 点击后从左侧消失怎么办？
+
+**原因：**项目用了 `/mnt/hwfile/<用户名>`，而旧 channel 的 `cwd` 是
+`/mnt/petrelfs/<用户名>`。新建项目时按顶部提示手动填写 `petrelfs`；已有项目在
+本机运行归组修复器，随后完全退出 Codex 一次，修复器会自动重开：
+
+```powershell
+~/.local/bin/codex-jumpbridge-repair-thread-assignments.ps1 -HostAlias <SSH Host> -UserName <用户名> -Restart
+```
+
+```bash
+~/.local/bin/codex-jumpbridge-repair-thread-assignments --host <SSH Host> --user <用户名> --restart
+```
+
+### Q：只有 208 能连，209/210 显示失败怎么办？
+
+旧版可能只启用了第一个 Host。重新运行当前安装器；它会扫描 `~/.ssh/config`，
+自动加入所有符合 T 集群 alias 或多段 User 路由格式的连接，并逐个运行 doctor。
+
+### Q：提示缺少 SSH 私钥怎么办？
+
+每位用户都需要自己的私钥和已登记的对应公钥。确认 `IdentityFile` 指向本机存在的
+私钥（如 `~/.ssh/id_rsa`）；不要复制同事的私钥，也不要把私钥上传到 GitHub。
+
+### Q：自动扫描不到 T 集群 Host 怎么办？
+
+如果 SSH alias 和 User 路由格式都被自定义，可显式指定本机 `~/.ssh/config` 中的别名：
+
+- Windows：`.\windows\install.ps1 -HostAlias <SSH Host>`
+- macOS：`./macos/install.sh --host <SSH Host>`
+
+`HostAlias` 只写入本机 JumpBridge 配置，不会提交到仓库。

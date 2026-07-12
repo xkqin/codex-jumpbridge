@@ -1,0 +1,7 @@
+*.backup-*
+*.log
+ssh.exe
+codex-jumpbridge.exe
+dist/
+.DS_Store
+Thumbs.db
