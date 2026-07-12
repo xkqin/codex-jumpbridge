@@ -1,5 +1,5 @@
 param(
-    [string]$Version = '1.3.2',
+    [string]$Version = '1.3.0',
     [string]$OutputDirectory = (Join-Path (Split-Path $PSScriptRoot -Parent) 'dist')
 )
 
@@ -30,6 +30,7 @@ try {
         'codex-jumpbridge.exe',
         'doctor.ps1',
         'install.ps1',
+        'repair-thread-assignments.ps1',
         'setup.ps1',
         'uninstall.ps1'
     )) {

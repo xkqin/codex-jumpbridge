@@ -2,7 +2,7 @@
 
 set -eu
 
-VERSION="${1:-1.3.2}"
+VERSION="${1:-1.3.0}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 OUTPUT_DIR="${2:-${ROOT}/dist}"
@@ -31,6 +31,7 @@ for name in \
     codex-jumpbridge.sh \
     doctor-macos.sh \
     install.sh \
+    repair-thread-assignments.sh \
     setup-macos.sh \
     uninstall.sh; do
     cp "${SCRIPT_DIR}/${name}" "${RESOURCES_DIR}/macos/${name}"

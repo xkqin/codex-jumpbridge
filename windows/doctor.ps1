@@ -57,6 +57,19 @@ if ($LASTEXITCODE -eq 0 -and $probe -match 'CODEX_JUMPBRIDGE_REMOTE_OK') {
     Fail 'Remote shell probe failed; verify the host alias and key permissions'
 }
 
+$homeProbe = & $wrapper $HostAlias (
+    'printf "__CODEX_JUMPBRIDGE_CWD__=%s__CODEX_JUMPBRIDGE_HOME__=%s__CODEX_JUMPBRIDGE_END__" "$PWD" "$HOME"') 2>$null
+$homeMatch = [regex]::Match(
+    ($homeProbe -join "`n"),
+    '__CODEX_JUMPBRIDGE_CWD__=(.*?)__CODEX_JUMPBRIDGE_HOME__=(.*?)__CODEX_JUMPBRIDGE_END__')
+if ($LASTEXITCODE -eq 0 -and $homeMatch.Success -and
+    $homeMatch.Groups[1].Value -eq $homeMatch.Groups[2].Value -and
+    $homeMatch.Groups[2].Value.StartsWith('/mnt/petrelfs/')) {
+    Report 'OK' "Remote commands start in $($homeMatch.Groups[2].Value)"
+} else {
+    Fail 'Remote commands do not start in /mnt/petrelfs home; update JumpBridge'
+}
+
 $remotePreparePath = Join-Path (Split-Path $PSScriptRoot -Parent) 'shared\remote-prepare.sh'
 if (-not (Test-Path -LiteralPath $remotePreparePath)) {
     $remotePreparePath = Join-Path $binDir 'codex-jumpbridge-remote-prepare.sh'
@@ -72,35 +85,21 @@ if (Test-Path -LiteralPath $remotePreparePath) {
     if ($LASTEXITCODE -eq 0 -and
         $remotePrepareOutput -match 'CODEX_JUMPBRIDGE_CODE_MODE_HOST=READY' -and
         $remotePrepareOutput -match 'CODEX_JUMPBRIDGE_HOME_LAUNCHER=READY') {
-        Report 'OK' 'Remote app-server launcher and Codex runtime are ready'
+        Report 'OK' 'Remote home launcher and codex-code-mode-host are ready'
     } else {
-        Fail 'Remote app-server launcher or code host is missing; open VS Code/Cursor on the cluster and rerun install.ps1'
+        Fail 'Remote code host is missing; open VS Code/Cursor on the cluster and rerun install.ps1'
     }
 } else {
     Fail 'Remote preparation helper is missing; rerun install.ps1'
 }
 
 $codexProbe = & $wrapper $HostAlias (
-    'PATH="$HOME/.local/bin:$PATH"; ' +
+    'PATH="${CODEX_INSTALL_DIR:-$HOME/.local/bin}:$PATH"; ' +
     'export PATH; command -v codex >/dev/null && codex --version') 2>$null
 if ($LASTEXITCODE -eq 0 -and $codexProbe -match 'codex') {
     Report 'OK' ("Remote " + (($codexProbe | Select-Object -Last 1) -join ''))
 } else {
     Fail 'Remote Codex was not found in ~/.local/bin or PATH'
-}
-
-$appServerCwdProbe = & $wrapper $HostAlias (
-    'printf app-server,__CWD__=%s,__HOME__=%s "$PWD" "$HOME"') 2>$null
-$appServerCwdMatch = [regex]::Match(
-    ($appServerCwdProbe -join "`n"),
-    '__CWD__=([^,\r\n]+),__HOME__=([^\r\n]+)')
-if ($LASTEXITCODE -eq 0 -and
-    $appServerCwdMatch.Success -and
-    $appServerCwdMatch.Groups[1].Value.Trim() -eq
-        $appServerCwdMatch.Groups[2].Value.Trim()) {
-    Report 'OK' 'App-server starts at remote HOME'
-} else {
-    Fail 'App-server working directory is unstable; reinstall the current JumpBridge version'
 }
 
 $proxyUrl = $null
@@ -148,4 +147,5 @@ if ($failed) {
 
 Write-Host ''
 Write-Host 'Status: READY'
-Write-Host 'Restart Codex Desktop, add this SSH host, then choose the remote folder you need.'
+Write-Host 'Restart Codex Desktop, add this SSH host, then open /mnt/petrelfs/<user>.'
+Write-Host 'Codex may display the canonical /mnt/hwfile/<user> path; remote commands still use petrelfs.'

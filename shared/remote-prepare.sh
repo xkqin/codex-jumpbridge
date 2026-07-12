@@ -10,13 +10,6 @@ LOCAL_CODEX="${LOCAL_BIN}/codex"
 LOCAL_REAL_CODEX="${LOCAL_BIN}/codex-jumpbridge-real"
 LOCAL_CODE_HOST="${LOCAL_BIN}/codex-code-mode-host"
 LAUNCHER_MARKER='CODEX_JUMPBRIDGE_HOME_LAUNCHER'
-LEGACY_LAUNCHER_MARKER='codex-jumpbridge-real'
-
-is_managed_launcher() {
-    [ -f "$LOCAL_CODEX" ] || return 1
-    grep -Fq "$LAUNCHER_MARKER" "$LOCAL_CODEX" 2>/dev/null ||
-        grep -Fq "$LEGACY_LAUNCHER_MARKER" "$LOCAL_CODEX" 2>/dev/null
-}
 
 find_editor_codex() {
     find \
@@ -56,7 +49,7 @@ while IFS= read -r candidate; do
 done < <(find_editor_codex)
 
 if [ -z "$selected" ] && [ -x "$LOCAL_REAL_CODEX" ] &&
-    is_managed_launcher; then
+    [ -f "$LOCAL_CODEX" ] && grep -Fq "$LAUNCHER_MARKER" "$LOCAL_CODEX"; then
     selected="$(readlink -f "$LOCAL_REAL_CODEX" 2>/dev/null || true)"
 fi
 
@@ -79,7 +72,7 @@ if [ -e "$LOCAL_CODEX" ] || [ -L "$LOCAL_CODEX" ]; then
                 exit 6
                 ;;
         esac
-    elif is_managed_launcher; then
+    elif grep -Fq "$LAUNCHER_MARKER" "$LOCAL_CODEX" 2>/dev/null; then
         :
     elif cmp -s "$LOCAL_CODEX" "$selected"; then
         :
@@ -98,6 +91,8 @@ cat > "$launcher_temp" <<'LAUNCHER'
 REAL_CODEX="${HOME}/.local/bin/codex-jumpbridge-real"
 if [ "${1:-}" = 'app-server' ]; then
     cd "$HOME" || exit 1
+    PWD="$HOME"
+    export PWD
 fi
 exec "$REAL_CODEX" "$@"
 LAUNCHER

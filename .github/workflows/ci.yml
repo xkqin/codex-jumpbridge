@@ -17,6 +17,7 @@ jobs:
             'windows/install.ps1',
             'windows/setup.ps1',
             'windows/doctor.ps1',
+            'windows/repair-thread-assignments.ps1',
             'windows/uninstall.ps1'
           )
           foreach ($file in $files) {
@@ -33,7 +34,7 @@ jobs:
         run: |
           .\windows\build.ps1
           $version = .\windows\codex-jumpbridge.exe --codex-jumpbridge-version
-          if ($version -ne 'codex-jumpbridge 1.3.2') {
+          if ($version -ne 'codex-jumpbridge 1.3.0') {
             throw "Unexpected version: $version"
           }
       - name: Build Windows installer
@@ -48,7 +49,7 @@ jobs:
           bash -n macos/codex-jumpbridge.sh macos/install.sh \
             macos/app-launcher.sh macos/build-app.sh \
             macos/setup-macos.sh macos/doctor-macos.sh \
-            macos/uninstall.sh \
+            macos/repair-thread-assignments.sh macos/uninstall.sh \
             shared/remote-prepare.sh
       - name: Build macOS app and disk image
-        run: bash macos/build-app.sh 1.3.2 dist
+        run: bash macos/build-app.sh 1.3.0 dist

@@ -231,7 +231,7 @@ function Show-MissingRuntime([string]$Alias, [bool]$Mismatch) {
 $reason
 
 缺少或不匹配：
-~/.local/bin/codex（JumpBridge app-server 启动器）
+~/.local/bin/codex（JumpBridge 家目录启动器）
 ~/.local/bin/codex-jumpbridge-real（编辑器扩展二进制）
 ~/.local/bin/codex-code-mode-host
 
