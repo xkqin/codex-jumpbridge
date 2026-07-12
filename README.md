@@ -2,12 +2,14 @@
 
 # Codex JumpBridge
 
-**让 Codex Desktop 穿过不支持标准 SSH exec 的 T 集群跳板机。**
+**让 Codex Desktop 稳定连接仅提供登录 Shell 的 T 集群 SSH 网关。**
 
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?logo=windows)
 ![macOS](https://img.shields.io/badge/macOS-Intel%20%7C%20Apple%20Silicon-111111?logo=apple)
 ![Codex](https://img.shields.io/badge/Codex-Desktop-111111)
 ![License](https://img.shields.io/badge/License-MIT-2ea44f)
+
+**如果 JumpBridge 对你有帮助，请点一下右上角 Star，支持项目继续完善。**
 
 </div>
 
@@ -35,32 +37,7 @@ Codex JumpBridge 是按需启动的 SSH 兼容层，不是后台服务。它把 
 
 ## 如何安装
 
-打开 [GitHub Releases](https://github.com/xkqin/codex-jumpbridge/releases/latest)：
-
-- **Windows 10/11：**下载并双击 `Codex-JumpBridge-Windows-v1.3.0.exe`。
-- **macOS 11+：**下载 `Codex-JumpBridge-macOS-v1.3.0.dmg`，将 App 拖入“应用程序”后运行。
-
-两个安装程序都会读取本机 `~/.ssh/config` 并打开原生设置界面。代理输入框默认
-为空，需要用户填写**集群计算节点访问 OpenAI 的专用代理**。发布包不包含
-Host、IP、代理地址或私钥。macOS App 尚未签名，首次运行请在 Finder 中右键 App
-并选择“打开”。
-
-**1. 选择 SSH Host，填写集群专用代理**
-
-![JumpBridge setup with an empty proxy field](docs/assets/setup-ui-empty.png)
-
-设置页会读取 `~/.ssh/config` 中的全部连接，并把推荐网关排在前面。选择要连接的
-SSH Host 后，填写集群计算节点访问 OpenAI 的专用代理；输入框默认留空且地址被遮蔽。
-
-**2. 可选：从 VS Code/Cursor 检测并验证**
-
-![JumpBridge setup after detecting the proxy](docs/assets/setup-ui-detected.png)
-
-若该集群已在 VS Code/Cursor 中正常使用，可点击“从 VS Code / Cursor 检测”。检测
-成功后先点“测试连接”，确认集群能够访问 OpenAI，再点“保存设置”。该代理只注入
-远端 Codex app-server，不会成为本机代理、SSH 代理或跳板地址。
-
-## 一句话安装
+### 方式一：交给 Codex 安装（推荐）
 
 在本机 Codex 中发送：
 
@@ -68,8 +45,38 @@ SSH Host 后，填写集群计算节点访问 OpenAI 的专用代理；输入框
 请安装并启动 https://github.com/xkqin/codex-jumpbridge 。阅读 README 后自动判断 Windows/macOS，扫描 ~/.ssh/config，把符合 T 集群 alias 或多段 User 路由格式的全部 Host 一次配置完成。只检查 IdentityFile 是否存在，不读取私钥。提示我填写“集群计算节点访问 OpenAI 的专用代理”，不要使用或展示仓库内置地址；缺少远端运行文件时按 README 的 Q&A 引导安装 openai.chatgpt，不安装独立 CLI。最后逐个 Host 运行 doctor，全部 READY 才算完成。
 ```
 
-安装器会弹出平台原生设置页：Windows 使用设置窗口，macOS 使用系统对话框。
-代理和远端运行文件都通过后，才会显示：
+Codex 会自动安装并打开平台原生设置页，然后按下面两步完成配置。
+
+**完整安装顺序**
+
+1. Codex 读取本仓库并判断当前是 Windows 还是 macOS。
+2. 安装器扫描本机 `~/.ssh/config`，识别可用集群 Host，并检查 `IdentityFile` 是否存在。
+3. 弹出 JumpBridge 设置 UI，用户选择要使用的 SSH Host。
+4. 用户手动填写集群 OpenAI 专用代理，或从已连接的 VS Code/Cursor 中检测。
+5. 点击“测试连接”；成功后点击“保存设置”。
+6. 安装器准备远端 Codex 运行文件，并逐个 Host 执行 doctor，直到全部显示 `READY`。
+7. 完全退出并重新打开 Codex Desktop，新建 SSH 项目时填写 `/mnt/petrelfs/<用户名>`。
+
+**1. 选择 SSH Host，填写集群专用代理**
+
+<p align="center">
+  <img src="docs/assets/setup-ui-empty.png" alt="JumpBridge setup with an empty proxy field" width="560">
+</p>
+
+设置页会读取 `~/.ssh/config` 中的全部连接，并把推荐网关排在前面。选择要连接的
+SSH Host 后，填写集群计算节点访问 OpenAI 的专用代理；输入框默认留空且地址被遮蔽。
+
+**2. 可选：从 VS Code/Cursor 检测并验证**
+
+<p align="center">
+  <img src="docs/assets/setup-ui-detected.png" alt="JumpBridge setup after detecting the proxy" width="560">
+</p>
+
+若该集群已在 VS Code/Cursor 中正常使用，可点击“从 VS Code / Cursor 检测”。检测
+成功后先点“测试连接”，确认集群能够访问 OpenAI，再点“保存设置”。该代理只注入
+远端 Codex app-server，不会成为本机代理、SSH 代理或跳板地址。
+
+代理和远端运行文件都通过后，doctor 才会显示：
 
 ```text
 [OK] Gateway shell bridge works
@@ -79,6 +86,16 @@ SSH Host 后，填写集群计算节点访问 OpenAI 的专用代理；输入框
 
 Status: READY
 ```
+
+### 方式二：下载安装程序
+
+也可以打开 [GitHub Releases](https://github.com/xkqin/codex-jumpbridge/releases/latest)：
+
+- **Windows 10/11：**下载并双击 `Codex-JumpBridge-Windows-v1.3.0.exe`。
+- **macOS 11+：**下载 `Codex-JumpBridge-macOS-v1.3.0.dmg`，将 App 拖入“应用程序”后运行。
+
+发布包不包含 Host、IP、代理地址或私钥。macOS App 尚未签名，首次运行请在
+Finder 中右键 App 并选择“打开”。
 
 ## 使用前准备
 
