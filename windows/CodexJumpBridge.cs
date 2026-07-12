@@ -12,6 +12,9 @@ internal static class CodexJumpBridge
     private static readonly HashSet<string> TClusterAliases =
         LoadJumpBridgeHosts();
 
+    private static readonly HashSet<string> RemoteMcpAliases =
+        LoadRemoteMcpHosts();
+
     private static readonly HashSet<string> OptionsWithSeparateValue =
         new HashSet<string>(StringComparer.Ordinal)
         {
@@ -209,6 +212,24 @@ internal static class CodexJumpBridge
         bool isStreamingProxy = remoteCommand.IndexOf(
             "app-server proxy",
             StringComparison.Ordinal) >= 0;
+        bool isDesktopBootstrap = !isStreamingProxy &&
+            remoteCommand.IndexOf(
+                "CODEX_SSH_SKIP_APP_SERVER_BOOT",
+                StringComparison.Ordinal) >= 0 &&
+            remoteCommand.IndexOf(
+                "app-server --listen unix://",
+                StringComparison.Ordinal) >= 0;
+        if (isDesktopBootstrap)
+        {
+            remoteCommand = SuppressDesktopBootstrap(remoteCommand);
+        }
+        if (isStreamingProxy)
+        {
+            remoteCommand = AddHostScopedProxyBootstrap(
+                remoteCommand,
+                hostAlias,
+                RemoteMcpAliases.Contains(hostAlias));
+        }
         bool launchesAppServer = remoteCommand.IndexOf(
             "app-server",
             StringComparison.Ordinal) >= 0;
@@ -338,6 +359,123 @@ internal static class CodexJumpBridge
             Console.Error.WriteLine("ssh wrapper failed while adapting the T-cluster command: " + ex.Message);
             return 255;
         }
+    }
+
+    private static string AddHostScopedProxyBootstrap(
+        string remoteCommand,
+        string hostAlias,
+        bool enableRemoteMcp)
+    {
+        const string proxyCommand = "codex app-server proxy";
+        int proxyIndex = remoteCommand.IndexOf(
+            proxyCommand,
+            StringComparison.Ordinal);
+        if (proxyIndex < 0)
+        {
+            return remoteCommand;
+        }
+
+        string token = BuildHostToken(hostAlias);
+        string socketPath =
+            "${CODEX_HOME:-$HOME/.codex}/app-server-control/" +
+            "app-server-control-jb-" + token + ".sock";
+        string logPath =
+            "${CODEX_HOME:-$HOME/.codex}/app-server-control/" +
+            "app-server-jb-" + token + ".log";
+        string pythonProbe =
+            "python3 -c \"import socket,sys; " +
+            "s=socket.socket(socket.AF_UNIX); s.settimeout(1); " +
+            "s.connect(sys.argv[1]); s.close()\"";
+
+        string bootstrap =
+            "__codex_jb_sock=\"" + socketPath + "\"; " +
+            "__codex_jb_log=\"" + logPath + "\"; " +
+            "__codex_jb_lock=\"$__codex_jb_sock.lock\"; " +
+            "__codex_jb_enable_mcp=" + (enableRemoteMcp ? "1" : "0") + "; " +
+            "mkdir -p \"$(dirname \"$__codex_jb_sock\")\"; " +
+            "if ! " + pythonProbe + " \"$__codex_jb_sock\" " +
+            ">/dev/null 2>&1; then " +
+            "__codex_jb_wait=0; " +
+            "until " + pythonProbe + " \"$__codex_jb_sock\" " +
+            ">/dev/null 2>&1; do " +
+            "if mkdir \"$__codex_jb_lock\" 2>/dev/null; then " +
+            "if ! " + pythonProbe + " \"$__codex_jb_sock\" " +
+            ">/dev/null 2>&1; then " +
+            "rm -f \"$__codex_jb_sock\"; " +
+            "set --; " +
+            "if [ \"$__codex_jb_enable_mcp\" != \"1\" ] " +
+            "&& [ \"${CODEX_JUMPBRIDGE_ENABLE_REMOTE_MCP:-0}\" != \"1\" ] " +
+            "&& [ -f \"${CODEX_HOME:-$HOME/.codex}/config.toml\" ]; then " +
+            "for __codex_jb_mcp in $(sed -n " +
+            "'s/^[[:space:]]*\\[mcp_servers\\.\\([A-Za-z0-9_-]*\\)\\]" +
+            "[[:space:]]*$/\\1/p' " +
+            "\"${CODEX_HOME:-$HOME/.codex}/config.toml\"); do " +
+            "set -- \"$@\" -c \"mcp_servers.$__codex_jb_mcp.enabled=false\"; " +
+            "done; fi; " +
+            "nohup codex \"$@\" app-server --listen \"unix://$__codex_jb_sock\" " +
+            ">\"$__codex_jb_log\" 2>&1 </dev/null & " +
+            "__codex_jb_owner_wait=0; " +
+            "until " + pythonProbe + " \"$__codex_jb_sock\" " +
+            ">/dev/null 2>&1; do " +
+            "__codex_jb_owner_wait=$((__codex_jb_owner_wait + 1)); " +
+            "if [ \"$__codex_jb_owner_wait\" -ge 150 ]; then " +
+            "rmdir \"$__codex_jb_lock\" 2>/dev/null || true; " +
+            "echo \"Codex JumpBridge: remote app-server did not become ready\" >&2; " +
+            "exit 86; fi; sleep 0.1; done; fi; " +
+            "rmdir \"$__codex_jb_lock\" 2>/dev/null || true; " +
+            "else sleep 0.1; fi; " +
+            "__codex_jb_wait=$((__codex_jb_wait + 1)); " +
+            "if [ \"$__codex_jb_wait\" -ge 200 ]; then " +
+            "echo \"Codex JumpBridge: remote app-server did not become ready\" >&2; " +
+            "exit 86; fi; done; fi; " +
+            "exec codex app-server proxy --sock \"$__codex_jb_sock\"";
+
+        return remoteCommand.Substring(0, proxyIndex) +
+            bootstrap +
+            remoteCommand.Substring(proxyIndex + proxyCommand.Length);
+    }
+
+    private static string SuppressDesktopBootstrap(string remoteCommand)
+    {
+        int markerEnd = remoteCommand.IndexOf(';');
+        if (markerEnd < 0)
+        {
+            return remoteCommand;
+        }
+
+        // Preserve Codex Desktop's bootstrap marker, then let the proxy path
+        // own the single host-scoped app-server for this SSH connection.
+        return remoteCommand.Substring(0, markerEnd + 1) + " true";
+    }
+
+    private static string BuildHostToken(string hostAlias)
+    {
+        uint hash = 2166136261;
+        byte[] bytes = Encoding.UTF8.GetBytes(hostAlias.ToLowerInvariant());
+        unchecked
+        {
+            foreach (byte value in bytes)
+            {
+                hash ^= value;
+                hash *= 16777619;
+            }
+        }
+        return hash.ToString("x8");
+    }
+
+    private static HashSet<string> LoadRemoteMcpHosts()
+    {
+        HashSet<string> hosts = new HashSet<string>(
+            StringComparer.OrdinalIgnoreCase);
+        string userProfile = Environment.GetFolderPath(
+            Environment.SpecialFolder.UserProfile);
+        AddHostsFromFile(
+            hosts,
+            Path.Combine(
+                userProfile,
+                ".codex-jumpbridge",
+                "remote-mcp-hosts.txt"));
+        return hosts;
     }
 
     private static string LoadProxyForHost(string hostAlias)

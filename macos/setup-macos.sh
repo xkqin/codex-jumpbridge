@@ -5,6 +5,7 @@ set -u
 CONFIG_DIR="${HOME}/.codex-jumpbridge"
 HOSTS_FILE="${CONFIG_DIR}/hosts.txt"
 PROXIES_FILE="${CONFIG_DIR}/proxies.txt"
+REMOTE_MCP_HOSTS_FILE="${CONFIG_DIR}/remote-mcp-hosts.txt"
 SSH_CONFIG="${HOME}/.ssh/config"
 SSH_WRAPPER="${HOME}/.local/bin/ssh"
 HOST_ALIAS=''
@@ -230,6 +231,30 @@ save_proxy() {
     mv "$temp" "$PROXIES_FILE"
 }
 
+save_remote_mcp() {
+    local target="$1"
+    local enabled="$2"
+    local temp
+    mkdir -p "$CONFIG_DIR"
+    temp="$(mktemp "${CONFIG_DIR}/remote-mcp-hosts.XXXXXX")"
+    if [ -f "$REMOTE_MCP_HOSTS_FILE" ]; then
+        awk -v target="$target" 'NF && $0 !~ /^[[:space:]]*#/ && $0 != target { print }' \
+            "$REMOTE_MCP_HOSTS_FILE" > "$temp"
+    fi
+    if [ "$enabled" = '1' ]; then
+        printf '%s\n' "$target" >> "$temp"
+    fi
+    chmod 600 "$temp"
+    mv "$temp" "$REMOTE_MCP_HOSTS_FILE"
+}
+
+ask_remote_mcp() {
+    osascript <<'APPLESCRIPT'
+set answer to display dialog "远端 MCP 会在新建任务时从集群连接外部服务。若服务不可达，可能触发 Codex Timeout。建议保持禁用。" with title "远端 MCP" buttons {"保持禁用", "启用"} default button "保持禁用" cancel button "保持禁用" with icon caution
+return button returned of answer
+APPLESCRIPT
+}
+
 enable_bridge_host() {
     local target="$1"
     local temp
@@ -305,6 +330,12 @@ if [ -z "$HOST_ALIAS" ]; then
 fi
 
 enable_bridge_host "$HOST_ALIAS"
+remote_mcp_answer="$(ask_remote_mcp 2>/dev/null || printf '保持禁用')"
+if [ "$remote_mcp_answer" = '启用' ]; then
+    save_remote_mcp "$HOST_ALIAS" 1
+else
+    save_remote_mcp "$HOST_ALIAS" 0
+fi
 detected_note='请填写团队提供的、供集群计算节点访问 OpenAI 的专用代理。'
 initial_proxy=''
 

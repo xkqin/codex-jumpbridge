@@ -11,6 +11,7 @@ Add-Type -AssemblyName System.Windows.Forms
 $configDir = Join-Path $HOME '.codex-jumpbridge'
 $hostsPath = Join-Path $configDir 'hosts.txt'
 $proxiesPath = Join-Path $configDir 'proxies.txt'
+$remoteMcpHostsPath = Join-Path $configDir 'remote-mcp-hosts.txt'
 $sshConfigPath = Join-Path $HOME '.ssh\config'
 $sshPath = Join-Path $HOME '.local\bin\ssh.exe'
 $realSshPath = Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe'
@@ -281,6 +282,39 @@ function Save-Proxy([string]$Alias, [string]$Url, [bool]$Enabled) {
         [Text.UTF8Encoding]::new($false))
 }
 
+function Test-RemoteMcpEnabled([string]$Alias) {
+    if (-not (Test-Path -LiteralPath $remoteMcpHostsPath)) {
+        return $false
+    }
+    return @(
+        Get-Content -LiteralPath $remoteMcpHostsPath |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ -and $_ -notmatch '^#' }
+    ) -contains $Alias
+}
+
+function Save-RemoteMcp([string]$Alias, [bool]$Enabled) {
+    $hosts = [Collections.Generic.List[string]]::new()
+    if (Test-Path -LiteralPath $remoteMcpHostsPath) {
+        foreach ($line in Get-Content -LiteralPath $remoteMcpHostsPath) {
+            $name = $line.Trim()
+            if ($name -and $name -notmatch '^#' -and -not $hosts.Contains($name)) {
+                $hosts.Add($name)
+            }
+        }
+    }
+    if ($Enabled -and -not $hosts.Contains($Alias)) {
+        $hosts.Add($Alias)
+    } elseif (-not $Enabled) {
+        [void]$hosts.Remove($Alias)
+    }
+    New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+    [IO.File]::WriteAllLines(
+        $remoteMcpHostsPath,
+        [string[]]$hosts,
+        [Text.UTF8Encoding]::new($false))
+}
+
 function Enable-BridgeHost([string]$Alias) {
     if ($Alias -notmatch '^[A-Za-z0-9._-]+$') {
         throw 'SSH Host 别名包含不支持的字符。'
@@ -337,8 +371,8 @@ foreach ($clusterHost in $clusterHosts) {
 
 $form = [Windows.Forms.Form]::new()
 $form.Text = 'Codex JumpBridge 设置'
-$form.ClientSize = [Drawing.Size]::new(720, 430)
-$form.MinimumSize = [Drawing.Size]::new(736, 469)
+$form.ClientSize = [Drawing.Size]::new(720, 482)
+$form.MinimumSize = [Drawing.Size]::new(736, 521)
 $form.StartPosition = 'CenterScreen'
 $form.Font = [Drawing.Font]::new('Microsoft YaHei UI', 10)
 $form.BackColor = [Drawing.Color]::FromArgb(248, 249, 250)
@@ -415,32 +449,41 @@ $showProxyToggle.AutoSize = $true
 $showProxyToggle.Checked = $false
 $form.Controls.Add($showProxyToggle)
 
+$remoteMcpToggle = [Windows.Forms.CheckBox]::new()
+$remoteMcpToggle.Text = '启用远端 MCP（仅在确认集群可访问 MCP 服务时开启）'
+$remoteMcpToggle.Location = [Drawing.Point]::new(30, 342)
+$remoteMcpToggle.AutoSize = $true
+$remoteMcpToggle.Checked = $false
+$form.Controls.Add($remoteMcpToggle)
+
 $status = [Windows.Forms.Label]::new()
 $status.Text = '尚未测试'
 $status.ForeColor = [Drawing.Color]::FromArgb(92, 99, 106)
-$status.Location = [Drawing.Point]::new(30, 356)
+$status.Location = [Drawing.Point]::new(30, 408)
 $status.Size = [Drawing.Size]::new(390, 34)
 $form.Controls.Add($status)
 
 $testButton = [Windows.Forms.Button]::new()
 $testButton.Text = '测试连接'
-$testButton.Location = [Drawing.Point]::new(440, 346)
+$testButton.Location = [Drawing.Point]::new(440, 398)
 $testButton.Size = [Drawing.Size]::new(110, 42)
 $testButton.FlatStyle = 'System'
 $form.Controls.Add($testButton)
 
 $saveButton = [Windows.Forms.Button]::new()
 $saveButton.Text = '保存设置'
-$saveButton.Location = [Drawing.Point]::new(560, 346)
+$saveButton.Location = [Drawing.Point]::new(560, 398)
 $saveButton.Size = [Drawing.Size]::new(130, 42)
 $saveButton.FlatStyle = 'System'
 $form.AcceptButton = $saveButton
 $form.Controls.Add($saveButton)
 
 $loadHost = {
+    $alias = [string]$hostBox.SelectedItem
     $proxyToggle.Checked = $true
     $proxyBox.Clear()
     $showProxyToggle.Checked = $false
+    $remoteMcpToggle.Checked = Test-RemoteMcpEnabled $alias
     $status.Text = '尚未测试'
     $status.ForeColor = [Drawing.Color]::FromArgb(92, 99, 106)
 }
@@ -525,6 +568,7 @@ $saveButton.Add_Click({
     try {
         Enable-BridgeHost $alias
         Save-Proxy $alias $url $proxyToggle.Checked
+        Save-RemoteMcp $alias $remoteMcpToggle.Checked
         $runtime = Prepare-RemoteRuntime $alias
         if ($runtime.Success) {
             $status.Text = '代理与远端运行文件已就绪；重新连接后生效'

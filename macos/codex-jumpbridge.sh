@@ -9,6 +9,7 @@ REAL_SSH="${CODEX_JUMPBRIDGE_REAL_SSH:-/usr/bin/ssh}"
 CONFIG_DIR="${HOME}/.codex-jumpbridge"
 HOSTS_FILE="${CONFIG_DIR}/hosts.txt"
 PROXIES_FILE="${CONFIG_DIR}/proxies.txt"
+REMOTE_MCP_HOSTS_FILE="${CONFIG_DIR}/remote-mcp-hosts.txt"
 
 if [ "$#" -eq 1 ] && {
     [ "$1" = '--codex-jumpbridge-version' ] ||
@@ -113,6 +114,12 @@ valid_proxy_url() {
     return 0
 }
 
+remote_mcp_enabled() {
+    local target="$1"
+    [ -f "$REMOTE_MCP_HOSTS_FILE" ] &&
+        grep -Fqx -- "$target" "$REMOTE_MCP_HOSTS_FILE"
+}
+
 posix_quote() {
     printf "'"
     printf '%s' "$1" | sed "s/'/'\\\\''/g"
@@ -125,6 +132,26 @@ make_token() {
     else
         printf '%s%s%s' "$$" "$RANDOM" "$(date +%s)"
     fi
+}
+
+make_host_token() {
+    local target="${1,,}"
+    local hash=2166136261
+    local i code
+    for ((i = 0; i < ${#target}; i++)); do
+        printf -v code '%d' "'${target:i:1}"
+        hash=$(( ((hash ^ code) * 16777619) & 0xffffffff ))
+    done
+    printf '%08x' "$hash"
+}
+
+host_scoped_proxy_command() {
+    local host_token="$1"
+    local enable_remote_mcp="$2"
+    local command
+    command='__codex_jb_sock="${CODEX_HOME:-$HOME/.codex}/app-server-control/app-server-control-jb-__TOKEN__.sock"; __codex_jb_log="${CODEX_HOME:-$HOME/.codex}/app-server-control/app-server-jb-__TOKEN__.log"; __codex_jb_lock="$__codex_jb_sock.lock"; __codex_jb_enable_mcp=__MCP__; mkdir -p "$(dirname "$__codex_jb_sock")"; __codex_jb_probe='"'"'python3 -c "import socket,sys; s=socket.socket(socket.AF_UNIX); s.settimeout(1); s.connect(sys.argv[1]); s.close()"'"'"'; if ! eval "$__codex_jb_probe \"$__codex_jb_sock\"" >/dev/null 2>&1; then __codex_jb_wait=0; until eval "$__codex_jb_probe \"$__codex_jb_sock\"" >/dev/null 2>&1; do if mkdir "$__codex_jb_lock" 2>/dev/null; then if ! eval "$__codex_jb_probe \"$__codex_jb_sock\"" >/dev/null 2>&1; then rm -f "$__codex_jb_sock"; set --; if [ "$__codex_jb_enable_mcp" != "1" ] && [ "${CODEX_JUMPBRIDGE_ENABLE_REMOTE_MCP:-0}" != "1" ] && [ -f "${CODEX_HOME:-$HOME/.codex}/config.toml" ]; then for __codex_jb_mcp in $(sed -n '"'"'s/^[[:space:]]*\[mcp_servers\.\([A-Za-z0-9_-]*\)\][[:space:]]*$/\1/p'"'"' "${CODEX_HOME:-$HOME/.codex}/config.toml"); do set -- "$@" -c "mcp_servers.$__codex_jb_mcp.enabled=false"; done; fi; nohup codex "$@" app-server --listen "unix://$__codex_jb_sock" >"$__codex_jb_log" 2>&1 </dev/null & __codex_jb_owner_wait=0; until eval "$__codex_jb_probe \"$__codex_jb_sock\"" >/dev/null 2>&1; do __codex_jb_owner_wait=$((__codex_jb_owner_wait + 1)); if [ "$__codex_jb_owner_wait" -ge 150 ]; then rmdir "$__codex_jb_lock" 2>/dev/null || true; echo "Codex JumpBridge: remote app-server did not become ready" >&2; exit 86; fi; sleep 0.1; done; fi; rmdir "$__codex_jb_lock" 2>/dev/null || true; else sleep 0.1; fi; __codex_jb_wait=$((__codex_jb_wait + 1)); if [ "$__codex_jb_wait" -ge 200 ]; then echo "Codex JumpBridge: remote app-server did not become ready" >&2; exit 86; fi; done; fi; exec codex app-server proxy --sock "$__codex_jb_sock"'
+    command="${command//__TOKEN__/$host_token}"
+    printf '%s' "${command//__MCP__/$enable_remote_mcp}"
 }
 
 args=("$@")
@@ -180,6 +207,22 @@ is_streaming=0
 case "$remote_command" in
     *'app-server proxy'*) is_streaming=1 ;;
 esac
+
+if [ "$is_streaming" -eq 0 ] &&
+    [[ "$remote_command" == *'CODEX_SSH_SKIP_APP_SERVER_BOOT'* ]] &&
+    [[ "$remote_command" == *'app-server --listen unix://'* ]]; then
+    remote_command="${remote_command%%;*}; true"
+fi
+
+if [ "$is_streaming" -eq 1 ]; then
+    host_token="$(make_host_token "${host_alias,,}")"
+    enable_remote_mcp=0
+    if remote_mcp_enabled "$host_alias"; then
+        enable_remote_mcp=1
+    fi
+    proxy_command="$(host_scoped_proxy_command "$host_token" "$enable_remote_mcp")"
+    remote_command="${remote_command/codex app-server proxy/$proxy_command}"
+fi
 
 launches_app_server=0
 case "$remote_command" in
