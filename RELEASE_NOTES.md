@@ -20,6 +20,6 @@
 > [!WARNING]
 > Windows 和 macOS 安装包暂未进行商业代码签名。若内部杀毒软件、SmartScreen 或
 > Gatekeeper 拦截，请在核对 SHA256 后仅允许 JumpBridge 安装程序/App 和安装后的
-> SSH wrapper；不要关闭杀毒软件或放行整个目录。受统一策略管理的电脑请联系内部 IT。
+> SSH wrapper；不要关闭杀毒软件或放行整个目录。
 
 macOS 首次运行若被拦截，请在 Finder 中右键 App，选择“打开”。
