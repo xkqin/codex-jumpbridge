@@ -93,12 +93,19 @@ Status: READY
 
 也可以打开 [GitHub Releases](https://github.com/xkqin/codex-jumpbridge/releases/latest)：
 
-- **Windows 10/11：**下载并双击 `Codex-JumpBridge-Windows-v1.3.2.exe`。
-- **macOS 11+：**下载 `Codex-JumpBridge-macOS-v1.3.2.dmg`，将 App 拖入“应用程序”后运行。
+- **Windows 10/11：**下载并双击 `Codex-JumpBridge-Windows-v1.3.3.exe`。
+- **macOS 11+：**下载 `Codex-JumpBridge-macOS-v1.3.3.dmg`，将 App 拖入“应用程序”后运行。
+
+> [!WARNING]
+> **内部使用版本暂未进行商业代码签名。** 请只从本仓库 Release 下载，并先核对
+> 同一 Release 中的 `SHA256SUMS.txt`。若公司杀毒软件、Windows SmartScreen 或
+> macOS Gatekeeper 拦截，请仅允许本次下载的 JumpBridge 安装程序/App 及安装后的
+> JumpBridge SSH wrapper；受统一安全策略管理的电脑请联系内部 IT。不要关闭杀毒
+> 软件，也不要放行整个下载目录或 `~/.local/bin`。
 
 升级已有版本时，请先完全退出 Codex Desktop，避免正在使用的 SSH wrapper 无法替换。
-发布包不包含 Host、IP、代理地址或私钥。macOS App 尚未签名，首次运行请在
-Finder 中右键 App 并选择“打开”。
+发布包不包含 Host、IP、代理地址或私钥。macOS 首次运行若被拦截，请在 Finder 中
+右键 App 并选择“打开”。
 
 ## 使用前准备
 
@@ -191,6 +198,12 @@ chmod +x macos/install.sh
 > 本项目针对 T 集群网关的实际行为开发，并非 OpenAI 官方项目。
 
 ## 常见问题（Q&A）
+
+### Q：杀毒软件、SmartScreen 或 Gatekeeper 拦截怎么办？
+
+先确认文件来自本仓库 Release，并用 `SHA256SUMS.txt` 核对哈希；确认一致后，仅允许
+该安装程序/App 和安装后的 JumpBridge SSH wrapper 运行。不要关闭杀毒软件或放行
+整个目录；若公司策略不允许自行处理，请联系内部 IT。
 
 ### Q：提示“缺少远端运行文件”怎么办？
 
