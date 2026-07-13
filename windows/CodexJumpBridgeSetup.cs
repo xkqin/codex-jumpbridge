@@ -10,7 +10,7 @@ using System.Windows.Forms;
 
 internal static class CodexJumpBridgeSetup
 {
-    private const string Version = "1.3.0";
+    private const string Version = "1.4.0";
     private const string PayloadResource = "CodexJumpBridge.Payload";
 
     [STAThread]
@@ -157,7 +157,8 @@ internal static class CodexJumpBridgeSetup
                 Path.Combine(workDirectory, "windows", "install.ps1"),
                 Path.Combine(workDirectory, "windows", "setup.ps1"),
                 Path.Combine(workDirectory, "windows", "codex-jumpbridge.exe"),
-                Path.Combine(workDirectory, "shared", "remote-prepare.sh")
+                Path.Combine(workDirectory, "shared", "remote-prepare.sh"),
+                Path.Combine(workDirectory, "shared", "history-sync.py")
             };
             foreach (string path in required)
             {

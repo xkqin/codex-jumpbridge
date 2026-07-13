@@ -124,6 +124,14 @@ else
     fail 'Remote Codex was not found in VS Code/Cursor or ~/.local/bin'
 fi
 
+history_probe="$($WRAPPER "$HOST_ALIAS" 'test -x "$HOME/.local/bin/codex-jumpbridge-history-sync" && "$HOME/.local/bin/codex-jumpbridge-history-sync" status && "$HOME/.local/bin/codex-jumpbridge-history-sync" preflight' 2>/dev/null || true)"
+if printf '%s' "$history_probe" | grep -q 'CODEX_JUMPBRIDGE_HISTORY_SYNC=1\.4\.0' &&
+    printf '%s' "$history_probe" | grep -q 'CODEX_JUMPBRIDGE_HISTORY_PREFLIGHT=READY'; then
+    report OK 'Remote per-Host history isolation is ready'
+else
+    fail 'Remote history isolation helper is missing; rerun install.sh'
+fi
+
 proxy_url="$(read_proxy "$HOST_ALIAS" 2>/dev/null || true)"
 proxy_prefix=''
 if [ -n "$proxy_url" ]; then

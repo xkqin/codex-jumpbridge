@@ -1,18 +1,22 @@
-## Codex JumpBridge 1.3.3
+## Codex JumpBridge 1.4.0
 
-这一版保持每条 SSH 连接独立启动远端 Codex app-server，并适配当前 Codex Desktop
-的远端启动流程。它会过滤集群网关在协议启动前输出的登录提示，降低连接更新失败、
-新建任务超时和历史任务无法继续的概率。
+这一版为每个 SSH Host 隔离 Codex 运行数据库，并在连接/断开时同步远端对话历史。
+它保留现有登录 Shell 适配、代理注入和普通 SSH 直通，解决多个计算节点共用
+`~/.codex/state_5.sqlite` 时出现的任务归组错乱、重启后“无任务”和 thread 冲突。
 
 ### 下载
 
-- **Windows 10/11：**运行 `Codex-JumpBridge-Windows-v1.3.3.exe`。
-- **macOS 11+：**打开 `Codex-JumpBridge-macOS-v1.3.3.dmg`，将 App 拖入“应用程序”后运行。
+- **Windows 10/11：**运行 `Codex-JumpBridge-Windows-v1.4.0.exe`。
+- **macOS 11+：**打开 `Codex-JumpBridge-macOS-v1.4.0.dmg`，将 App 拖入“应用程序”后运行。
 - 下载后请使用同一 Release 中的 `SHA256SUMS.txt` 核对文件哈希。
 
 ### 本版说明
 
-- 每个 Host 保持独立的 app-server 会话，多个 SSH 连接可同时使用。
+- 每个 Host 使用独立的 app-server 和 SQLite；rollout 历史在连接时同步、断开时回写。
+- 远端 `~/.codex` 仅作为只读导入源；自动同步不会覆盖 VS Code/Cursor 正在使用的历史文件。
+- app-server 使用节点本地短 socket 路径，安装和 doctor 都会先执行真实 AF_UNIX bind 检查。
+- 同一集群账号一次只激活一个历史 Host；第二个连接会被互斥锁拒绝，避免 thread 重复加载。
+- 保留旧版兼容回退；远端助手缺失或显式关闭历史同步时，仍使用原 app-server 启动链。
 - 远端 MCP 默认关闭，避免不可达的 MCP 服务阻塞新建任务。
 - 安装器扫描本机 `~/.ssh/config`，只检查 `IdentityFile` 是否存在，不读取私钥。
 - 发布包不包含 Host、IP、代理地址、用户名或私钥。

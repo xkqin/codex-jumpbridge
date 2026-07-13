@@ -34,7 +34,7 @@ jobs:
         run: |
           .\windows\build.ps1
           $version = .\windows\codex-jumpbridge.exe --codex-jumpbridge-version
-          if ($version -ne 'codex-jumpbridge 1.3.0') {
+          if ($version -ne 'codex-jumpbridge 1.4.0') {
             throw "Unexpected version: $version"
           }
       - name: Build Windows installer
@@ -51,5 +51,10 @@ jobs:
             macos/setup-macos.sh macos/doctor-macos.sh \
             macos/repair-thread-assignments.sh macos/uninstall.sh \
             shared/remote-prepare.sh
+      - name: Check history isolation helper
+        run: |
+          python3 -m py_compile shared/history-sync.py
+          python3 shared/history-sync.py --version
+          python3 shared/history-sync.py preflight
       - name: Build macOS app and disk image
-        run: bash macos/build-app.sh 1.3.0 dist
+        run: bash macos/build-app.sh 1.4.0 dist

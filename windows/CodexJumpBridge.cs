@@ -9,8 +9,13 @@ internal static class CodexJumpBridge
 {
     private static readonly string RealSsh = ResolveRealSsh();
 
+    private static readonly List<string> TClusterHostOrder =
+        LoadJumpBridgeHostOrder();
+
     private static readonly HashSet<string> TClusterAliases =
-        LoadJumpBridgeHosts();
+        new HashSet<string>(
+            TClusterHostOrder,
+            StringComparer.OrdinalIgnoreCase);
 
     private static readonly HashSet<string> RemoteMcpAliases =
         LoadRemoteMcpHosts();
@@ -29,7 +34,7 @@ internal static class CodexJumpBridge
             (args[0] == "--codex-jumpbridge-version" ||
              args[0] == "--codex-t-wrapper-version"))
         {
-            Console.WriteLine("codex-jumpbridge 1.3.0");
+            Console.WriteLine("codex-jumpbridge 1.4.0");
             return 0;
         }
 
@@ -64,21 +69,20 @@ internal static class CodexJumpBridge
         return Path.Combine(windows, "System32", "OpenSSH", "ssh.exe");
     }
 
-    private static HashSet<string> LoadJumpBridgeHosts()
+    private static List<string> LoadJumpBridgeHostOrder()
     {
-        HashSet<string> hosts = new HashSet<string>(
-            StringComparer.OrdinalIgnoreCase);
+        List<string> hosts = new List<string>();
 
-        AddHosts(
+        AddOrderedHosts(
             hosts,
             Environment.GetEnvironmentVariable("CODEX_JUMPBRIDGE_HOSTS"));
 
         string userProfile = Environment.GetFolderPath(
             Environment.SpecialFolder.UserProfile);
-        AddHostsFromFile(
+        AddOrderedHostsFromFile(
             hosts,
             Path.Combine(userProfile, ".codex-jumpbridge", "hosts.txt"));
-        AddHostsFromFile(
+        AddOrderedHostsFromFile(
             hosts,
             Path.Combine(
                 AppDomain.CurrentDomain.BaseDirectory,
@@ -219,6 +223,10 @@ internal static class CodexJumpBridge
             remoteCommand.IndexOf(
                 "app-server --listen unix://",
                 StringComparison.Ordinal) >= 0;
+        string historyBusyMarker = isStreamingProxy
+            ? "__CODEX_JUMPBRIDGE_HISTORY_BUSY_" +
+              Guid.NewGuid().ToString("N") + "__"
+            : null;
         if (isDesktopBootstrap)
         {
             remoteCommand = SuppressDesktopBootstrap(remoteCommand);
@@ -229,6 +237,10 @@ internal static class CodexJumpBridge
                 remoteCommand,
                 hostAlias,
                 RemoteMcpAliases.Contains(hostAlias));
+            remoteCommand = AddHistoryIsolation(
+                remoteCommand,
+                hostAlias,
+                historyBusyMarker);
         }
         bool launchesAppServer = remoteCommand.IndexOf(
             "app-server",
@@ -256,7 +268,8 @@ internal static class CodexJumpBridge
                     child.StandardOutput.BaseStream,
                     Console.OpenStandardOutput(),
                     startMarker,
-                    isStreamingProxy ? null : completionPrefix);
+                    isStreamingProxy ? null : completionPrefix,
+                    historyBusyMarker);
                 Thread stdoutThread = stdoutRelay.Start();
                 Thread stderrThread = StartCopyThread(
                     child.StandardError.BaseStream,
@@ -327,12 +340,27 @@ internal static class CodexJumpBridge
                 }
 
                 int completed = isStreamingProxy
-                    ? WaitHandle.WaitAny(new WaitHandle[] { processExited })
+                    ? WaitHandle.WaitAny(new WaitHandle[] {
+                        stdoutRelay.FailureEvent,
+                        processExited
+                    })
                     : WaitHandle.WaitAny(
                         new WaitHandle[] { stdoutRelay.CompletionEvent, processExited });
                 int result;
 
-                if (!isStreamingProxy && completed == 0)
+                if (isStreamingProxy && completed == 0)
+                {
+                    result = 87;
+                    try
+                    {
+                        child.Kill();
+                    }
+                    catch
+                    {
+                    }
+                    processExited.WaitOne(5000);
+                }
+                else if (!isStreamingProxy && completed == 0)
                 {
                     result = stdoutRelay.RemoteExitCode;
                     try
@@ -376,23 +404,37 @@ internal static class CodexJumpBridge
         }
 
         string token = BuildHostToken(hostAlias);
-        string socketPath =
-            "${CODEX_HOME:-$HOME/.codex}/app-server-control/" +
-            "app-server-control-jb-" + token + ".sock";
-        string logPath =
-            "${CODEX_HOME:-$HOME/.codex}/app-server-control/" +
-            "app-server-jb-" + token + ".log";
+        string runDirectory =
+            "${CODEX_JUMPBRIDGE_RUN_DIR:-${XDG_RUNTIME_DIR:-/tmp}/" +
+            "codex-jumpbridge-$(id -u)}";
+        string socketPath = runDirectory + "/as-" + token + ".sock";
+        string logPath = runDirectory + "/as-" + token + ".log";
+        string pidPath = runDirectory + "/as-" + token + ".pid";
+        string pythonDirectoryProbe =
+            "python3 -c \"import os,stat,sys; p=sys.argv[1]; " +
+            "os.makedirs(p,mode=0o700,exist_ok=True); " +
+            "f=os.open(p,os.O_RDONLY|os.O_DIRECTORY|getattr(os,'O_NOFOLLOW',0)); " +
+            "os.fchmod(f,0o700); s=os.fstat(f); os.close(f); " +
+            "sys.exit(0 if stat.S_ISDIR(s.st_mode) and s.st_uid==os.getuid() " +
+            "and (stat.S_IMODE(s.st_mode)&0o077)==0 else 1)\"";
         string pythonProbe =
             "python3 -c \"import socket,sys; " +
             "s=socket.socket(socket.AF_UNIX); s.settimeout(1); " +
             "s.connect(sys.argv[1]); s.close()\"";
 
         string bootstrap =
+            "__codex_jb_run=\"" + runDirectory + "\"; " +
             "__codex_jb_sock=\"" + socketPath + "\"; " +
             "__codex_jb_log=\"" + logPath + "\"; " +
+            "__codex_jb_pid=\"" + pidPath + "\"; " +
             "__codex_jb_lock=\"$__codex_jb_sock.lock\"; " +
             "__codex_jb_enable_mcp=" + (enableRemoteMcp ? "1" : "0") + "; " +
-            "mkdir -p \"$(dirname \"$__codex_jb_sock\")\"; " +
+            "umask 077; if ! " + pythonDirectoryProbe + " \"$__codex_jb_run\"; then " +
+            "echo \"Codex JumpBridge: unsafe remote runtime directory\" >&2; " +
+            "exit 84; fi; " +
+            "if [ \"${#__codex_jb_sock}\" -gt 100 ]; then " +
+            "echo \"Codex JumpBridge: remote socket path is too long\" >&2; " +
+            "exit 85; fi; " +
             "if ! " + pythonProbe + " \"$__codex_jb_sock\" " +
             ">/dev/null 2>&1; then " +
             "__codex_jb_wait=0; " +
@@ -414,6 +456,8 @@ internal static class CodexJumpBridge
             "done; fi; " +
             "nohup codex \"$@\" app-server --listen \"unix://$__codex_jb_sock\" " +
             ">\"$__codex_jb_log\" 2>&1 </dev/null & " +
+            "__codex_jb_server_pid=$!; " +
+            "printf '%s\\n' \"$__codex_jb_server_pid\" >\"$__codex_jb_pid\"; " +
             "__codex_jb_owner_wait=0; " +
             "until " + pythonProbe + " \"$__codex_jb_sock\" " +
             ">/dev/null 2>&1; do " +
@@ -433,6 +477,43 @@ internal static class CodexJumpBridge
         return remoteCommand.Substring(0, proxyIndex) +
             bootstrap +
             remoteCommand.Substring(proxyIndex + proxyCommand.Length);
+    }
+
+    private static string AddHistoryIsolation(
+        string remoteCommand,
+        string hostAlias,
+        string busyMarker)
+    {
+        string token = BuildHostToken(hostAlias);
+        int priority = 0;
+        for (int i = 0; i < TClusterHostOrder.Count; i++)
+        {
+            if (String.Equals(
+                TClusterHostOrder[i], hostAlias, StringComparison.OrdinalIgnoreCase))
+            {
+                priority = i;
+                break;
+            }
+        }
+        int delaySeconds = Math.Min(priority * 2, 6);
+        string helper = "$HOME/.local/bin/codex-jumpbridge-history-sync";
+        string delay = delaySeconds > 0
+            ? "if [ \"${CODEX_JUMPBRIDGE_DISABLE_PRIORITY_DELAY:-0}\" != \"1\" ]; " +
+              "then sleep " + delaySeconds + "; fi; "
+            : String.Empty;
+        string quotedCommand = PosixSingleQuote(remoteCommand);
+
+        return "if [ -x \"" + helper + "\" ] " +
+            "&& [ \"${CODEX_JUMPBRIDGE_DISABLE_HISTORY_SYNC:-0}\" != \"1\" ] " +
+            "&& \"" + helper + "\" preflight >/dev/null 2>&1; then " +
+            delay +
+            "CODEX_JUMPBRIDGE_EXPECT_APP_SERVER=1 " +
+            "CODEX_JUMPBRIDGE_BUSY_MARKER=" + PosixSingleQuote(busyMarker) + " " +
+            "\"" + helper + "\" run " + token +
+            " -- /bin/sh -c " + quotedCommand + "; " +
+            "__codex_jb_history_rc=$?; " +
+            "exit \"$__codex_jb_history_rc\"; " +
+            "else exec /bin/sh -c " + quotedCommand + "; fi";
     }
 
     private static string SuppressDesktopBootstrap(string remoteCommand)
@@ -470,6 +551,64 @@ internal static class CodexJumpBridge
                 ".codex-jumpbridge",
                 "remote-mcp-hosts.txt"));
         return hosts;
+    }
+
+    private static void AddOrderedHostsFromFile(
+        List<string> hosts,
+        string path)
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return;
+            }
+
+            foreach (string line in File.ReadAllLines(path))
+            {
+                string value = line.Trim();
+                if (value.Length == 0 || value.StartsWith("#"))
+                {
+                    continue;
+                }
+                AddOrderedHost(hosts, value);
+            }
+        }
+        catch
+        {
+            // A bad optional config must not break ordinary SSH passthrough.
+        }
+    }
+
+    private static void AddOrderedHosts(List<string> hosts, string value)
+    {
+        if (String.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        foreach (string item in value.Split(
+            new[] { ',', ';', '\r', '\n' },
+            StringSplitOptions.RemoveEmptyEntries))
+        {
+            AddOrderedHost(hosts, item.Trim());
+        }
+    }
+
+    private static void AddOrderedHost(List<string> hosts, string host)
+    {
+        if (host.Length == 0)
+        {
+            return;
+        }
+        foreach (string existing in hosts)
+        {
+            if (String.Equals(existing, host, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+        hosts.Add(host);
     }
 
     private static string LoadProxyForHost(string hostAlias)
@@ -708,20 +847,26 @@ internal static class CodexJumpBridge
         private readonly Stream destination;
         private readonly byte[] startMarker;
         private readonly byte[] prefix;
+        private readonly byte[] failureMarker;
         private readonly ManualResetEvent startEvent = new ManualResetEvent(false);
         private readonly ManualResetEvent completionEvent = new ManualResetEvent(false);
+        private readonly ManualResetEvent failureEvent = new ManualResetEvent(false);
         private int remoteExitCode = 255;
 
         public CompletionMarkerRelay(
             Stream source,
             Stream destination,
             string startMarker,
-            string prefix)
+            string prefix,
+            string failureMarker)
         {
             this.source = source;
             this.destination = destination;
             this.startMarker = Encoding.ASCII.GetBytes(startMarker);
             this.prefix = prefix == null ? null : Encoding.ASCII.GetBytes(prefix);
+            this.failureMarker = failureMarker == null
+                ? null
+                : Encoding.ASCII.GetBytes(failureMarker);
         }
 
         public WaitHandle StartEvent
@@ -732,6 +877,11 @@ internal static class CodexJumpBridge
         public WaitHandle CompletionEvent
         {
             get { return completionEvent; }
+        }
+
+        public WaitHandle FailureEvent
+        {
+            get { return failureEvent; }
         }
 
         public int RemoteExitCode
@@ -804,10 +954,28 @@ internal static class CodexJumpBridge
                         }
                     }
 
+                    int failureIndex = failureMarker == null
+                        ? -1
+                        : IndexOf(pending, failureMarker);
+                    if (failureIndex >= 0)
+                    {
+                        WriteRange(pending, 0, failureIndex);
+                        destination.Flush();
+                        failureEvent.Set();
+                        return;
+                    }
+
                     if (prefix == null)
                     {
-                        WriteRange(pending, 0, pending.Count);
-                        pending.Clear();
+                        int retainedPrefixCount = failureMarker == null
+                            ? 0
+                            : LongestSuffixMatchingPrefix(pending, failureMarker);
+                        int safeStreamingCount = pending.Count - retainedPrefixCount;
+                        if (safeStreamingCount > 0)
+                        {
+                            WriteRange(pending, 0, safeStreamingCount);
+                            pending.RemoveRange(0, safeStreamingCount);
+                        }
                         destination.Flush();
                         continue;
                     }
@@ -897,6 +1065,31 @@ internal static class CodexJumpBridge
                 }
             }
             return -1;
+        }
+
+        private static int LongestSuffixMatchingPrefix(
+            List<byte> data,
+            byte[] value)
+        {
+            int maximum = Math.Min(data.Count, value.Length - 1);
+            for (int length = maximum; length > 0; length--)
+            {
+                int start = data.Count - length;
+                bool match = true;
+                for (int i = 0; i < length; i++)
+                {
+                    if (data[start + i] != value[i])
+                    {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match)
+                {
+                    return length;
+                }
+            }
+            return 0;
         }
 
         private static int IndexOfByte(List<byte> data, byte value, int start)
