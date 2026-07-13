@@ -766,7 +766,10 @@ internal static class CodexJumpBridge
                     int count = source.Read(chunk, 0, chunk.Length);
                     if (count <= 0)
                     {
-                        FlushPending(pending);
+                        if (started)
+                        {
+                            FlushPending(pending);
+                        }
                         return;
                     }
 
@@ -777,10 +780,11 @@ internal static class CodexJumpBridge
 
                     if (!started)
                     {
+                        // Gateway login notices can arrive on stdout. Protocol output
+                        // begins only after the private start marker.
                         int startIndex = IndexOf(pending, startMarker);
                         if (startIndex >= 0)
                         {
-                            WriteRange(pending, 0, startIndex);
                             int startEnd = startIndex + startMarker.Length;
                             if (startEnd < pending.Count && pending[startEnd] == (byte)'\r')
                             {
@@ -800,7 +804,6 @@ internal static class CodexJumpBridge
                             int safeStartCount = pending.Count - (startMarker.Length - 1);
                             if (safeStartCount > 0)
                             {
-                                WriteRange(pending, 0, safeStartCount);
                                 pending.RemoveRange(0, safeStartCount);
                             }
                             continue;

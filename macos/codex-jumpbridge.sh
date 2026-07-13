@@ -297,19 +297,21 @@ exec 9<&0
 writer_pid=$!
 exec 9<&-
 
+# Gateway login notices can arrive on stdout; discard them before our marker.
 awk -v start="$start_marker" \
     -v prefix="$([ "$is_streaming" -eq 1 ] && printf '' || printf '%s' "$completion_prefix")" \
     -v started="$started_file" '
-BEGIN { remote_rc = 0; completed = 0 }
+BEGIN { remote_rc = 0; completed = 0; seen_start = 0 }
 {
-    start_pos = index($0, start)
-    if (start_pos > 0) {
-        before = substr($0, 1, start_pos - 1)
-        after = substr($0, start_pos + length(start))
-        system("/usr/bin/touch \"" started "\"")
-        if (before != "") print before
-        if (after != "") print after
-        fflush()
+    if (!seen_start) {
+        start_pos = index($0, start)
+        if (start_pos > 0) {
+            after = substr($0, start_pos + length(start))
+            seen_start = 1
+            system("/usr/bin/touch \"" started "\"")
+            if (after != "") print after
+            fflush()
+        }
         next
     }
 
