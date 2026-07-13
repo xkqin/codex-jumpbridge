@@ -104,8 +104,8 @@ Status: READY
 
 也可以打开 [GitHub Releases](https://github.com/xkqin/codex-jumpbridge/releases/latest)：
 
-- **Windows 10/11：**下载并双击 `Codex-JumpBridge-Windows-v1.3.3.exe`。
-- **macOS 11+：**下载 `Codex-JumpBridge-macOS-v1.3.3.dmg`，将 App 拖入“应用程序”后运行。
+- **Windows 10/11：**下载并双击 `Codex-JumpBridge-Windows-v1.4.0.exe`。
+- **macOS 11+：**下载 `Codex-JumpBridge-macOS-v1.4.0.dmg`，将 App 拖入“应用程序”后运行。
 
 > [!WARNING]
 > **内部使用版本暂未进行商业代码签名。** 请只从本仓库 Release 下载，并先核对

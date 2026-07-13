@@ -144,7 +144,7 @@ $bundledVersion = if (Test-Path -LiteralPath $bundledWrapper) {
 } else {
     ''
 }
-if ($bundledVersion -ne 'codex-jumpbridge 1.3.0') {
+if ($bundledVersion -ne 'codex-jumpbridge 1.4.0') {
     & (Join-Path $PSScriptRoot 'build.ps1') | Out-Null
     Write-Step 'OK' 'Built Codex JumpBridge'
 } else {
@@ -157,7 +157,7 @@ $backupDir = Join-Path $configDir 'backup'
 New-Item -ItemType Directory -Force -Path $binDir, $configDir, $backupDir | Out-Null
 
 $targetSsh = Join-Path $binDir 'ssh.exe'
-$expectedVersion = 'codex-jumpbridge 1.3.0'
+$expectedVersion = 'codex-jumpbridge 1.4.0'
 $installedVersion = if (Test-Path -LiteralPath $targetSsh) {
     ((& $targetSsh --codex-jumpbridge-version 2>$null) | Out-String).Trim()
 } else {
