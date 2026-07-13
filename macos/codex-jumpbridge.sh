@@ -211,7 +211,7 @@ esac
 if [ "$is_streaming" -eq 0 ] &&
     [[ "$remote_command" == *'CODEX_SSH_SKIP_APP_SERVER_BOOT'* ]] &&
     [[ "$remote_command" == *'app-server --listen unix://'* ]]; then
-    remote_command="${remote_command%%;*}; true"
+    remote_command="CODEX_SSH_SKIP_APP_SERVER_BOOT=true ${remote_command}"
 fi
 
 if [ "$is_streaming" -eq 1 ]; then

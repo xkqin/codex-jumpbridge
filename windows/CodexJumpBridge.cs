@@ -437,15 +437,9 @@ internal static class CodexJumpBridge
 
     private static string SuppressDesktopBootstrap(string remoteCommand)
     {
-        int markerEnd = remoteCommand.IndexOf(';');
-        if (markerEnd < 0)
-        {
-            return remoteCommand;
-        }
-
-        // Preserve Codex Desktop's bootstrap marker, then let the proxy path
-        // own the single host-scoped app-server for this SSH connection.
-        return remoteCommand.Substring(0, markerEnd + 1) + " true";
+        // Keep Codex's login-shell wrapper and binary probe marker intact. The
+        // Desktop bootstrap has an official environment-controlled early exit.
+        return "CODEX_SSH_SKIP_APP_SERVER_BOOT=true " + remoteCommand;
     }
 
     private static string BuildHostToken(string hostAlias)
