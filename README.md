@@ -26,6 +26,11 @@ Codex JumpBridge 是按需启动的 SSH 兼容层，不是后台服务。它把 
 | --- | --- |
 | ![Codex SSH project connected](docs/assets/codex-ssh-connected.png) | ![Remote cluster path](docs/assets/remote-project-path.png) |
 
+<p align="center">
+  <strong>多个 SSH Host 同时在线</strong><br>
+  <img src="docs/assets/codex-ssh-all-hosts-connected.png" alt="Multiple Codex SSH hosts connected at the same time" width="780">
+</p>
+
 ## 如何安装
 
 ### 方式一：交给 Codex 安装（推荐）
