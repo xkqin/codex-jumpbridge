@@ -1,3 +1,18 @@
+## Codex JumpBridge 1.4.1
+
+本版本修复新版 Codex Desktop 下的 SSH 连接与历史加载稳定性问题：
+
+- 保留 `~/.ssh/config` 中 Host alias 的原始大小写，兼容 Codex 的小写化行为。
+- 旧历史在安装阶段一次合并，连接时直接使用互斥保护的专用主历史，避免共享存储扫描超过 websocket 超时。
+- 兼容新版 Desktop 的嵌套登录 Shell 启动格式，并在历史准备前正确返回 8 字节启动门。
+- Windows wrapper 退出时自动结束其 OpenSSH 子进程，防止失败重试堆积。
+- Windows 安装后广播 PATH 变化；macOS 同步更新登录环境，避免 Codex 重启后仍调用系统 SSH。
+- Windows 安装器按文件内容更新同版本热修复；macOS 修复单 Host 配置解析。
+- Windows/macOS doctor 只有完成真实 Desktop 启动门与 WebSocket 101 检查后才报告 `READY`。
+
+- **Windows 10/11：**运行 `Codex-JumpBridge-Windows-v1.4.1.exe`。
+- **macOS 11+：**打开 `Codex-JumpBridge-macOS-v1.4.1.dmg`，将 App 拖入“应用程序”后运行。
+
 ## Codex JumpBridge 1.4.0
 
 这一版保留已经跑通的 SSH 登录 Shell 适配、双向 app-server 数据流、网关提示过滤、

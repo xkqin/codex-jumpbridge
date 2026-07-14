@@ -54,6 +54,38 @@ read_proxy() {
     return 1
 }
 
+desktop_protocol_probe() {
+    local login gate payload remote work request output error pid attempt ok
+    login='CODEX_REMOTE_PAYLOAD="$1"; export CODEX_REMOTE_PAYLOAD; exec /bin/sh -c "$CODEX_REMOTE_PAYLOAD"'
+    gate="printf '%b' '\107\101\124\105\061\062\063\064'"
+    payload="${gate}; PATH=\"\${CODEX_INSTALL_DIR:-\$HOME/.local/bin}:\$PATH\"; export PATH; codex app-server proxy"
+    remote="sh -c $(posix_quote "$login") sh $(posix_quote "$payload")"
+    work="$(mktemp -d "${TMPDIR:-/tmp}/codex-jumpbridge-doctor.XXXXXX")" || return 1
+    request="${work}/request"
+    output="${work}/output"
+    error="${work}/error"
+    printf 'GET / HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n' > "$request"
+    "$WRAPPER" "$HOST_ALIAS" "$remote" < "$request" > "$output" 2> "$error" &
+    pid=$!
+    ok=1
+    attempt=0
+    while [ "$attempt" -lt 300 ]; do
+        if grep -a -q 'GATE1234HTTP/1.1 101 Switching Protocols' "$output" 2>/dev/null; then
+            ok=0
+            break
+        fi
+        if ! kill -0 "$pid" 2>/dev/null; then
+            break
+        fi
+        sleep 0.1
+        attempt=$((attempt + 1))
+    done
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    rm -rf "$work"
+    return "$ok"
+}
+
 if [ ! -x "$WRAPPER" ]; then
     printf 'JumpBridge is not installed: %s\n' "$WRAPPER" >&2
     exit 1
@@ -138,11 +170,11 @@ else
 fi
 
 history_probe="$($WRAPPER "$HOST_ALIAS" 'test -x "$HOME/.local/bin/codex-jumpbridge-history-sync" && "$HOME/.local/bin/codex-jumpbridge-history-sync" status && "$HOME/.local/bin/codex-jumpbridge-history-sync" preflight' 2>/dev/null || true)"
-if printf '%s' "$history_probe" | grep -q 'CODEX_JUMPBRIDGE_HISTORY_SYNC=1\.4\.0' &&
+if printf '%s' "$history_probe" | grep -q 'CODEX_JUMPBRIDGE_HISTORY_SYNC=1\.4\.1' &&
     printf '%s' "$history_probe" | grep -q 'CODEX_JUMPBRIDGE_HISTORY_PREFLIGHT=READY'; then
-    report OK 'Remote per-Host history isolation is ready'
+    report OK 'Remote shared history coordination is ready'
 else
-    fail 'Remote history isolation helper is missing; rerun install.sh'
+    fail 'Remote shared history helper is missing; rerun install.sh'
 fi
 
 proxy_url="$(read_proxy "$HOST_ALIAS" 2>/dev/null || true)"
@@ -159,6 +191,12 @@ case "$network_probe" in
     *CODEX_JUMPBRIDGE_HTTP=401*) report OK 'OpenAI route works (HTTP 401)' ;;
     *) fail 'OpenAI route failed; run codex-jumpbridge-setup and test the cluster egress proxy' ;;
 esac
+
+if desktop_protocol_probe; then
+    report OK 'Codex Desktop startup gate and WebSocket upgrade work'
+else
+    fail 'Codex Desktop protocol probe failed; update JumpBridge and disconnect stale SSH sessions'
+fi
 
 printf '\n'
 if [ "$FAILED" -ne 0 ]; then

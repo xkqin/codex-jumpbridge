@@ -4,7 +4,7 @@
 
 set -u
 
-VERSION='1.4.0'
+VERSION='1.4.1'
 REAL_SSH="${CODEX_JUMPBRIDGE_REAL_SSH:-/usr/bin/ssh}"
 CONFIG_DIR="${HOME}/.codex-jumpbridge"
 HOSTS_FILE="${CONFIG_DIR}/hosts.txt"
@@ -140,6 +140,110 @@ posix_quote() {
     printf "'"
 }
 
+parse_posix_shell_words() {
+    local input="$1"
+    local length=${#input}
+    local index=0 character quote='' word='' in_word=0
+    PARSED_SHELL_WORDS=()
+
+    while [ "$index" -lt "$length" ]; do
+        character="${input:index:1}"
+        if [ "$quote" = "'" ]; then
+            if [ "$character" = "'" ]; then
+                quote=''
+            else
+                word="${word}${character}"
+            fi
+        elif [ "$quote" = '"' ]; then
+            if [ "$character" = '"' ]; then
+                quote=''
+            elif [ "$character" = "\\" ]; then
+                index=$((index + 1))
+                [ "$index" -lt "$length" ] || return 1
+                word="${word}${input:index:1}"
+            else
+                word="${word}${character}"
+            fi
+        else
+            case "$character" in
+                ' '|$'\t'|$'\r'|$'\n')
+                    if [ "$in_word" -eq 1 ]; then
+                        PARSED_SHELL_WORDS+=("$word")
+                        word=''
+                        in_word=0
+                    fi
+                    ;;
+                "'"|'"')
+                    quote="$character"
+                    in_word=1
+                    ;;
+                \\)
+                    index=$((index + 1))
+                    [ "$index" -lt "$length" ] || return 1
+                    word="${word}${input:index:1}"
+                    in_word=1
+                    ;;
+                ';'|'&'|'|'|'<'|'>'|'('|')')
+                    return 1
+                    ;;
+                *)
+                    word="${word}${character}"
+                    in_word=1
+                    ;;
+            esac
+        fi
+        index=$((index + 1))
+    done
+
+    [ -z "$quote" ] || return 1
+    if [ "$in_word" -eq 1 ]; then
+        PARSED_SHELL_WORDS+=("$word")
+    fi
+    [ "${#PARSED_SHELL_WORDS[@]}" -gt 0 ]
+}
+
+join_posix_shell_words() {
+    local result='' word quoted
+    for word in "${PARSED_SHELL_WORDS[@]}"; do
+        quoted="$(posix_quote "$word")"
+        if [ -n "$result" ]; then
+            result="${result} "
+        fi
+        result="${result}${quoted}"
+    done
+    printf '%s' "$result"
+}
+
+extract_desktop_startup_gate() {
+    local payload="$1"
+    local prefix="printf '%b' '"
+    local encoded='' character
+    local index=${#prefix}
+    local length=${#payload}
+
+    DESKTOP_STARTUP_GATE=''
+    DESKTOP_PROXY_PAYLOAD="$payload"
+    [ "${payload:0:${#prefix}}" = "$prefix" ] || return 1
+    while [ "$index" -lt "$length" ]; do
+        character="${payload:index:1}"
+        [ "$character" != "'" ] || break
+        encoded="${encoded}${character}"
+        index=$((index + 1))
+    done
+    [ "$index" -lt "$length" ] || return 1
+    [ "${#encoded}" -eq 32 ] || return 1
+    [[ "$encoded" =~ ^(\\[0-7][0-7][0-7]){8}$ ]] || return 1
+    [ "${payload:index:2}" = "';" ] || return 1
+
+    DESKTOP_STARTUP_GATE="${payload:0:$((index + 1))}"
+    index=$((index + 2))
+    while [ "$index" -lt "$length" ] &&
+        [[ "${payload:index:1}" =~ [[:space:]] ]]; do
+        index=$((index + 1))
+    done
+    DESKTOP_PROXY_PAYLOAD="${payload:index}"
+}
+
 make_token() {
     if command -v uuidgen >/dev/null 2>&1; then
         uuidgen | tr -d '-'
@@ -267,10 +371,26 @@ if [ "$is_streaming" -eq 1 ]; then
         enable_remote_mcp=1
     fi
     proxy_command="$(host_scoped_proxy_command "$host_token" "$enable_remote_mcp")"
-    proxy_placeholder='codex app-server proxy'
-    remote_prefix="${remote_command%%"$proxy_placeholder"*}"
-    remote_suffix="${remote_command#*"$proxy_placeholder"}"
-    remote_command="${remote_prefix}${proxy_command}${remote_suffix}"
+    desktop_startup_gate=''
+    if parse_posix_shell_words "$remote_command" &&
+        [ "${#PARSED_SHELL_WORDS[@]}" -eq 5 ] &&
+        [ "${PARSED_SHELL_WORDS[0]}" = 'sh' ] &&
+        [ "${PARSED_SHELL_WORDS[1]}" = '-c' ] &&
+        [ "${PARSED_SHELL_WORDS[3]}" = 'sh' ] &&
+        [[ "${PARSED_SHELL_WORDS[4]}" == *'codex app-server proxy'* ]]; then
+        extract_desktop_startup_gate "${PARSED_SHELL_WORDS[4]}" || true
+        desktop_startup_gate="$DESKTOP_STARTUP_GATE"
+        proxy_placeholder='codex app-server proxy'
+        remote_prefix="${DESKTOP_PROXY_PAYLOAD%%"$proxy_placeholder"*}"
+        remote_suffix="${DESKTOP_PROXY_PAYLOAD#*"$proxy_placeholder"}"
+        PARSED_SHELL_WORDS[4]="${remote_prefix}${proxy_command}${remote_suffix}"
+        remote_command="$(join_posix_shell_words)"
+    else
+        proxy_placeholder='codex app-server proxy'
+        remote_prefix="${remote_command%%"$proxy_placeholder"*}"
+        remote_suffix="${remote_command#*"$proxy_placeholder"}"
+        remote_command="${remote_prefix}${proxy_command}${remote_suffix}"
+    fi
     history_helper='${HOME}/.local/bin/codex-jumpbridge-history-sync'
     quoted_history_command="$(posix_quote "$remote_command")"
     priority_delay="$(host_priority_delay "$host_alias")"
@@ -279,6 +399,9 @@ if [ "$is_streaming" -eq 1 ]; then
         delay_command="if [ \"\${CODEX_JUMPBRIDGE_DISABLE_PRIORITY_DELAY:-0}\" != \"1\" ]; then sleep ${priority_delay}; fi; "
     fi
     remote_command="if [ -x \"${history_helper}\" ] && [ \"\${CODEX_JUMPBRIDGE_DISABLE_HISTORY_SYNC:-0}\" != \"1\" ] && \"${history_helper}\" preflight >/dev/null 2>&1; then ${delay_command}CODEX_JUMPBRIDGE_EXPECT_APP_SERVER=1 CODEX_JUMPBRIDGE_BUSY_MARKER=$(posix_quote "$history_busy_marker") \"${history_helper}\" run ${host_token} -- /bin/sh -c ${quoted_history_command}; __codex_jb_history_rc=\$?; exit \"\$__codex_jb_history_rc\"; else exec /bin/sh -c ${quoted_history_command}; fi"
+    if [ -n "$desktop_startup_gate" ]; then
+        remote_command="${desktop_startup_gate}; ${remote_command}"
+    fi
 fi
 
 launches_app_server=0

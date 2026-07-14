@@ -19,6 +19,49 @@ function Write-Step([string]$Status, [string]$Message) {
     Write-Host ("[{0}] {1}" -f $Status, $Message)
 }
 
+function Publish-EnvironmentChange {
+    if (-not ('CodexJumpBridge.NativeEnvironment' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+namespace CodexJumpBridge {
+    public static class NativeEnvironment {
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern IntPtr SendMessageTimeout(
+            IntPtr hWnd,
+            uint message,
+            UIntPtr wParam,
+            string lParam,
+            uint flags,
+            uint timeout,
+            out UIntPtr result);
+    }
+}
+'@
+    }
+    $broadcast = [IntPtr]0xffff
+    $wmSettingChange = 0x001a
+    $abortIfHung = 0x0002
+    $result = [UIntPtr]::Zero
+    [void][CodexJumpBridge.NativeEnvironment]::SendMessageTimeout(
+        $broadcast,
+        $wmSettingChange,
+        [UIntPtr]::Zero,
+        'Environment',
+        $abortIfHung,
+        5000,
+        [ref]$result)
+}
+
+function Get-HostToken([string]$Alias) {
+    [uint32]$hash = 2166136261
+    foreach ($value in [Text.Encoding]::UTF8.GetBytes($Alias.ToLowerInvariant())) {
+        $hash = [uint32]((([uint64]($hash -bxor $value)) * 16777619) -band 4294967295)
+    }
+    return $hash.ToString('x8')
+}
+
 function Invoke-RemotePrepare(
     [string]$Wrapper,
     [string]$Alias,
@@ -98,11 +141,21 @@ function Install-RemoteHistorySync(
         'rm -f "$__codex_jb_backup"'
     $output = & $Wrapper $Alias $remoteCommand 2>&1
     if ($LASTEXITCODE -ne 0 -or
-        ($output | Out-String) -notmatch 'codex-jumpbridge-history-sync 1\.4\.0' -or
+        ($output | Out-String) -notmatch 'codex-jumpbridge-history-sync 1\.4\.1' -or
         ($output | Out-String) -notmatch 'CODEX_JUMPBRIDGE_HISTORY_PREFLIGHT=READY') {
-        throw "Remote history isolation helper installation failed for $Alias."
+        throw "Remote shared history helper installation failed for $Alias."
     }
-    Write-Step 'OK' "Remote history isolation helper is ready on $Alias"
+    Write-Step 'OK' "Remote shared history helper is ready on $Alias"
+
+    $hostToken = Get-HostToken $Alias
+    $prepareOutput = & $Wrapper $Alias (
+        '"$HOME/.local/bin/codex-jumpbridge-history-sync" prepare ' + $hostToken
+    ) 2>&1
+    if ($LASTEXITCODE -ne 0 -or
+        ($prepareOutput | Out-String) -notmatch 'CODEX_JUMPBRIDGE_HISTORY_PREPARE=READY') {
+        throw "Remote history preparation failed for $Alias. Disconnect active Codex SSH Hosts and run install.ps1 again."
+    }
+    Write-Step 'OK' "Remote history is prepared for $Alias"
 }
 
 function Get-SshAliases([string]$Path) {
@@ -198,7 +251,7 @@ $sourceIsNewer = (Test-Path -LiteralPath $bundledWrapper) -and
     (Test-Path -LiteralPath $wrapperSource) -and
     ((Get-Item -LiteralPath $wrapperSource).LastWriteTimeUtc -gt
      (Get-Item -LiteralPath $bundledWrapper).LastWriteTimeUtc)
-if ($bundledVersion -ne 'codex-jumpbridge 1.4.0' -or $sourceIsNewer) {
+if ($bundledVersion -ne 'codex-jumpbridge 1.4.1' -or $sourceIsNewer) {
     & (Join-Path $PSScriptRoot 'build.ps1') | Out-Null
     Write-Step 'OK' 'Built Codex JumpBridge'
 } else {
@@ -211,7 +264,7 @@ $backupDir = Join-Path $configDir 'backup'
 New-Item -ItemType Directory -Force -Path $binDir, $configDir, $backupDir | Out-Null
 
 $targetSsh = Join-Path $binDir 'ssh.exe'
-$expectedVersion = 'codex-jumpbridge 1.4.0'
+$expectedVersion = 'codex-jumpbridge 1.4.1'
 $installedVersion = if (Test-Path -LiteralPath $targetSsh) {
     ((& $targetSsh --codex-jumpbridge-version 2>$null) | Out-String).Trim()
 } else {
@@ -234,7 +287,10 @@ if ($installedVersion -eq $expectedVersion -and $installedHash -eq $bundledHash)
     try {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'codex-jumpbridge.exe') -Destination $targetSsh -Force
     } catch {
-        throw 'CODEX_JUMPBRIDGE_RUNTIME_IN_USE'
+        throw @"
+Codex JumpBridge is currently serving an active Codex SSH connection, so Windows cannot update ssh.exe.
+Disconnect Codex SSH Hosts (ordinary VS Code/Cursor SSH sessions may stay open), wait a few seconds, then run the same install command again.
+"@
     }
 }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'doctor.ps1') -Destination (
@@ -327,6 +383,12 @@ if ($pathParts -notcontains $binDir) {
 }
 if (($env:PATH -split ';') -notcontains $binDir) {
     $env:PATH = "$binDir;$env:PATH"
+}
+try {
+    Publish-EnvironmentChange
+    Write-Step 'OK' 'Refreshed the Windows desktop environment for new Codex launches'
+} catch {
+    Write-Step 'WARN' 'Could not notify the Windows desktop about PATH; fully sign out or restart Windows before using Codex'
 }
 
 Write-Step 'OK' "Installed: $targetSsh"

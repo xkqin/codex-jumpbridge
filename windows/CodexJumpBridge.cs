@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 
@@ -29,7 +30,7 @@ internal static class CodexJumpBridge
             (args[0] == "--codex-jumpbridge-version" ||
              args[0] == "--codex-t-wrapper-version"))
         {
-            Console.WriteLine("codex-jumpbridge 1.4.0");
+            Console.WriteLine("codex-jumpbridge 1.4.1");
             return 0;
         }
 
@@ -217,6 +218,7 @@ internal static class CodexJumpBridge
         try
         {
             using (Process child = Process.Start(startInfo))
+            using (ChildProcessJob childJob = ChildProcessJob.TryAttach(child))
             {
                 child.WaitForExit();
                 return child.ExitCode;
@@ -255,14 +257,20 @@ internal static class CodexJumpBridge
         }
         if (isStreamingProxy)
         {
-            remoteCommand = AddHostScopedProxyBootstrap(
+            string desktopStartupGate;
+            remoteCommand = RewriteStreamingProxyCommand(
                 remoteCommand,
                 hostAlias,
-                RemoteMcpAliases.Contains(hostAlias));
+                RemoteMcpAliases.Contains(hostAlias),
+                out desktopStartupGate);
             remoteCommand = AddHistoryIsolation(
                 remoteCommand,
                 hostAlias,
                 historyBusyMarker);
+            if (desktopStartupGate != null)
+            {
+                remoteCommand = desktopStartupGate + "; " + remoteCommand;
+            }
         }
         bool launchesAppServer = remoteCommand.IndexOf(
             "app-server",
@@ -275,6 +283,7 @@ internal static class CodexJumpBridge
         try
         {
             using (Process child = Process.Start(startInfo))
+            using (ChildProcessJob childJob = ChildProcessJob.TryAttach(child))
             {
                 string completionPrefix = "__CODEX_T_SSH_DONE_" +
                     Guid.NewGuid().ToString("N") + ":";
@@ -499,6 +508,192 @@ internal static class CodexJumpBridge
         return remoteCommand.Substring(0, proxyIndex) +
             bootstrap +
             remoteCommand.Substring(proxyIndex + proxyCommand.Length);
+    }
+
+    private static string RewriteStreamingProxyCommand(
+        string remoteCommand,
+        string hostAlias,
+        bool enableRemoteMcp,
+        out string desktopStartupGate)
+    {
+        desktopStartupGate = null;
+        List<string> words;
+        if (TryParsePosixShellWords(remoteCommand, out words) &&
+            words.Count == 5 &&
+            words[0] == "sh" &&
+            words[1] == "-c" &&
+            words[3] == "sh" &&
+            words[4].IndexOf("codex app-server proxy", StringComparison.Ordinal) >= 0)
+        {
+            string payload = words[4];
+            TryExtractDesktopStartupGate(
+                ref payload,
+                out desktopStartupGate);
+            words[4] = AddHostScopedProxyBootstrap(
+                payload,
+                hostAlias,
+                enableRemoteMcp);
+            return JoinPosixShellWords(words);
+        }
+
+        return AddHostScopedProxyBootstrap(
+            remoteCommand,
+            hostAlias,
+            enableRemoteMcp);
+    }
+
+    private static bool TryExtractDesktopStartupGate(
+        ref string payload,
+        out string startupGate)
+    {
+        startupGate = null;
+        const string prefix = "printf '%b' '";
+        if (!payload.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        int valueEnd = payload.IndexOf('\'', prefix.Length);
+        if (valueEnd < 0 || valueEnd + 2 >= payload.Length ||
+            payload[valueEnd + 1] != ';' ||
+            !Char.IsWhiteSpace(payload[valueEnd + 2]))
+        {
+            return false;
+        }
+
+        string encoded = payload.Substring(
+            prefix.Length,
+            valueEnd - prefix.Length);
+        if (encoded.Length != 32)
+        {
+            return false;
+        }
+        for (int i = 0; i < encoded.Length; i += 4)
+        {
+            if (encoded[i] != '\\' ||
+                encoded[i + 1] < '0' || encoded[i + 1] > '7' ||
+                encoded[i + 2] < '0' || encoded[i + 2] > '7' ||
+                encoded[i + 3] < '0' || encoded[i + 3] > '7')
+            {
+                return false;
+            }
+        }
+
+        startupGate = payload.Substring(0, valueEnd + 1);
+        int payloadStart = valueEnd + 2;
+        while (payloadStart < payload.Length &&
+            Char.IsWhiteSpace(payload[payloadStart]))
+        {
+            payloadStart++;
+        }
+        payload = payload.Substring(payloadStart);
+        return true;
+    }
+
+    private static bool TryParsePosixShellWords(
+        string command,
+        out List<string> words)
+    {
+        words = new List<string>();
+        StringBuilder current = new StringBuilder();
+        char quote = '\0';
+        bool inWord = false;
+
+        for (int i = 0; i < command.Length; i++)
+        {
+            char value = command[i];
+            if (quote == '\'')
+            {
+                if (value == '\'')
+                {
+                    quote = '\0';
+                }
+                else
+                {
+                    current.Append(value);
+                }
+                continue;
+            }
+
+            if (quote == '"')
+            {
+                if (value == '"')
+                {
+                    quote = '\0';
+                }
+                else if (value == '\\' && i + 1 < command.Length)
+                {
+                    current.Append(command[++i]);
+                }
+                else
+                {
+                    current.Append(value);
+                }
+                continue;
+            }
+
+            if (Char.IsWhiteSpace(value))
+            {
+                if (inWord)
+                {
+                    words.Add(current.ToString());
+                    current.Length = 0;
+                    inWord = false;
+                }
+                continue;
+            }
+
+            if (value == '\'' || value == '"')
+            {
+                quote = value;
+                inWord = true;
+                continue;
+            }
+
+            if (value == '\\')
+            {
+                if (i + 1 >= command.Length)
+                {
+                    return false;
+                }
+                current.Append(command[++i]);
+                inWord = true;
+                continue;
+            }
+
+            if (value == ';' || value == '&' || value == '|' ||
+                value == '<' || value == '>' || value == '(' || value == ')')
+            {
+                return false;
+            }
+
+            current.Append(value);
+            inWord = true;
+        }
+
+        if (quote != '\0')
+        {
+            return false;
+        }
+        if (inWord)
+        {
+            words.Add(current.ToString());
+        }
+        return words.Count > 0;
+    }
+
+    private static string JoinPosixShellWords(List<string> words)
+    {
+        StringBuilder command = new StringBuilder();
+        foreach (string word in words)
+        {
+            if (command.Length > 0)
+            {
+                command.Append(' ');
+            }
+            command.Append(PosixSingleQuote(word));
+        }
+        return command.ToString();
     }
 
     private static string AddHistoryIsolation(
@@ -1125,5 +1320,120 @@ internal static class CodexJumpBridge
             }
             return -1;
         }
+    }
+
+    private sealed class ChildProcessJob : IDisposable
+    {
+        private const uint JobObjectLimitKillOnJobClose = 0x00002000;
+        private const int JobObjectExtendedLimitInformationClass = 9;
+        private IntPtr handle;
+
+        private ChildProcessJob(IntPtr handle)
+        {
+            this.handle = handle;
+        }
+
+        public static ChildProcessJob TryAttach(Process child)
+        {
+            IntPtr job = CreateJobObject(IntPtr.Zero, null);
+            if (job == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            JobObjectExtendedLimitInformation limits =
+                new JobObjectExtendedLimitInformation();
+            limits.BasicLimitInformation.LimitFlags =
+                JobObjectLimitKillOnJobClose;
+            int size = Marshal.SizeOf(typeof(JobObjectExtendedLimitInformation));
+            IntPtr buffer = Marshal.AllocHGlobal(size);
+            try
+            {
+                Marshal.StructureToPtr(limits, buffer, false);
+                if (!SetInformationJobObject(
+                        job,
+                        JobObjectExtendedLimitInformationClass,
+                        buffer,
+                        (uint)size) ||
+                    !AssignProcessToJobObject(job, child.Handle))
+                {
+                    CloseHandle(job);
+                    return null;
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+            return new ChildProcessJob(job);
+        }
+
+        public void Dispose()
+        {
+            if (handle != IntPtr.Zero)
+            {
+                CloseHandle(handle);
+                handle = IntPtr.Zero;
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct IoCounters
+        {
+            public ulong ReadOperationCount;
+            public ulong WriteOperationCount;
+            public ulong OtherOperationCount;
+            public ulong ReadTransferCount;
+            public ulong WriteTransferCount;
+            public ulong OtherTransferCount;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JobObjectBasicLimitInformation
+        {
+            public long PerProcessUserTimeLimit;
+            public long PerJobUserTimeLimit;
+            public uint LimitFlags;
+            public UIntPtr MinimumWorkingSetSize;
+            public UIntPtr MaximumWorkingSetSize;
+            public uint ActiveProcessLimit;
+            public UIntPtr Affinity;
+            public uint PriorityClass;
+            public uint SchedulingClass;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JobObjectExtendedLimitInformation
+        {
+            public JobObjectBasicLimitInformation BasicLimitInformation;
+            public IoCounters IoInfo;
+            public UIntPtr ProcessMemoryLimit;
+            public UIntPtr JobMemoryLimit;
+            public UIntPtr PeakProcessMemoryUsed;
+            public UIntPtr PeakJobMemoryUsed;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr CreateJobObject(
+            IntPtr jobAttributes,
+            string name);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetInformationJobObject(
+            IntPtr job,
+            int informationClass,
+            IntPtr information,
+            uint informationLength);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool AssignProcessToJobObject(
+            IntPtr job,
+            IntPtr process);
+
+        [DllImport("kernel32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseHandle(IntPtr handle);
     }
 }

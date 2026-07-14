@@ -22,11 +22,23 @@ jobs:
           )
           foreach ($file in $files) {
             $errors = $null
-            [void][Management.Automation.Language.Parser]::ParseFile(
+            $ast = [Management.Automation.Language.Parser]::ParseFile(
               (Resolve-Path $file), [ref]$null, [ref]$errors)
             if ($errors.Count) {
               $errors | Format-List
               exit 1
+            }
+            if ($file -eq 'windows/install.ps1') {
+              $tokenFunction = $ast.Find({
+                param($node)
+                $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                  $node.Name -eq 'Get-HostToken'
+              }, $true)
+              if (-not $tokenFunction) { throw 'Get-HostToken was not found' }
+              . ([scriptblock]::Create($tokenFunction.Extent.Text))
+              if ((Get-HostToken 'jump-T208-Ci') -ne '8c9a24a9') {
+                throw 'Windows installer Host token does not match the wrapper'
+              }
             }
           }
       - name: Build Windows wrapper
@@ -34,8 +46,36 @@ jobs:
         run: |
           .\windows\build.ps1
           $version = .\windows\codex-jumpbridge.exe --codex-jumpbridge-version
-          if ($version -ne 'codex-jumpbridge 1.4.0') {
+          if ($version -ne 'codex-jumpbridge 1.4.1') {
             throw "Unexpected version: $version"
+          }
+      - name: Rewrite current Codex Desktop SSH payload safely
+        shell: powershell
+        run: |
+          function Quote-Posix([string]$value) {
+            $quote = [char]39
+            $replacement = "$quote\$quote$quote"
+            "$quote$($value.Replace([string]$quote, $replacement))$quote"
+          }
+          $login = 'CODEX_REMOTE_PAYLOAD="$1"; export CODEX_REMOTE_PAYLOAD; exec /bin/sh -c "$CODEX_REMOTE_PAYLOAD"'
+          $gate = "printf '%b' '\107\101\124\105\061\062\063\064'"
+          $payload = $gate + '; PATH="${CODEX_INSTALL_DIR:-$HOME/.local/bin}:$PATH"; export PATH; codex app-server proxy'
+          $command = "sh -c $(Quote-Posix $login) sh $(Quote-Posix $payload)"
+          $assembly = [Reflection.Assembly]::LoadFile(
+            (Resolve-Path '.\windows\codex-jumpbridge.exe'))
+          $method = $assembly.GetType('CodexJumpBridge').GetMethod(
+            'RewriteStreamingProxyCommand',
+            [Reflection.BindingFlags]'NonPublic,Static')
+          $arguments = [object[]]@($command, 'jump-T208-Ci', $false, $null)
+          $rewritten = [string]$method.Invoke($null, $arguments)
+          if ([string]$arguments[3] -ne $gate) {
+            throw 'Desktop startup gate was not extracted intact'
+          }
+          if ($rewritten.Contains($gate)) {
+            throw 'Desktop startup gate remained trapped inside history setup'
+          }
+          if (-not $rewritten.Contains('exec codex app-server proxy --sock')) {
+            throw 'Host-scoped app-server proxy was not inserted'
           }
       - name: Preserve configured SSH alias spelling
         shell: powershell
@@ -46,11 +86,24 @@ jobs:
           @'
           using System;
           using System.IO;
+          using System.Threading;
 
           internal static class FakeSsh
           {
               public static int Main(string[] args)
               {
+                  if (args.Length == 1 && args[0] == "ordinary-host")
+                  {
+                      string pidFile = Environment.GetEnvironmentVariable(
+                          "CODEX_JUMPBRIDGE_FAKE_PID_FILE");
+                      if (String.IsNullOrWhiteSpace(pidFile))
+                      {
+                          return 91;
+                      }
+                      File.WriteAllText(pidFile, ProcessId().ToString());
+                      Thread.Sleep(Timeout.Infinite);
+                      return 0;
+                  }
                   if (args.Length != 2 || args[0] != "jump-T208-Ci" || args[1] != "sh")
                   {
                       return 94;
@@ -87,6 +140,11 @@ jobs:
                   output.Flush();
                   return 0;
               }
+
+              private static int ProcessId()
+              {
+                  return System.Diagnostics.Process.GetCurrentProcess().Id;
+              }
           }
           '@ | Set-Content -LiteralPath $fakeSource -Encoding UTF8
           $fakeSsh = Join-Path $work 'fake-ssh.exe'
@@ -99,6 +157,7 @@ jobs:
           $hadHosts = Test-Path -LiteralPath $hostsPath
           if ($hadHosts) { Copy-Item -LiteralPath $hostsPath -Destination $hostsBackup }
           $oldRealSsh = $env:CODEX_JUMPBRIDGE_REAL_SSH
+          $oldFakePidFile = $env:CODEX_JUMPBRIDGE_FAKE_PID_FILE
           try {
             New-Item -ItemType Directory -Force -Path $hostsDir | Out-Null
             [IO.File]::WriteAllLines($hostsPath, [string[]]@('jump-T208-Ci'), [Text.UTF8Encoding]::new($false))
@@ -121,8 +180,42 @@ jobs:
               $actualHex = [BitConverter]::ToString($actualBytes)
               throw "Wrapper did not preserve the raw proxy stream: length=$($actualBytes.Length), hex=$actualHex"
             }
+
+            $fakePidFile = Join-Path $work 'fake-ssh.pid'
+            $env:CODEX_JUMPBRIDGE_FAKE_PID_FILE = $fakePidFile
+            $wrapperProcess = Start-Process -FilePath (Resolve-Path '.\windows\codex-jumpbridge.exe') `
+              -ArgumentList 'ordinary-host' -NoNewWindow -PassThru
+            try {
+              $deadline = [DateTime]::UtcNow.AddSeconds(10)
+              while (-not (Test-Path -LiteralPath $fakePidFile) -and
+                  [DateTime]::UtcNow -lt $deadline) {
+                Start-Sleep -Milliseconds 100
+              }
+              if (-not (Test-Path -LiteralPath $fakePidFile)) {
+                throw 'Fake SSH child did not start'
+              }
+              $fakeProcessId = [int](Get-Content -Raw $fakePidFile)
+              if (-not (Get-Process -Id $fakeProcessId -ErrorAction SilentlyContinue)) {
+                throw 'Fake SSH child exited before lifecycle test'
+              }
+              Stop-Process -Id $wrapperProcess.Id -Force
+              $deadline = [DateTime]::UtcNow.AddSeconds(10)
+              while ((Get-Process -Id $fakeProcessId -ErrorAction SilentlyContinue) -and
+                  [DateTime]::UtcNow -lt $deadline) {
+                Start-Sleep -Milliseconds 100
+              }
+              if (Get-Process -Id $fakeProcessId -ErrorAction SilentlyContinue) {
+                Stop-Process -Id $fakeProcessId -Force -ErrorAction SilentlyContinue
+                throw 'Fake SSH child survived wrapper termination'
+              }
+            } finally {
+              if (-not $wrapperProcess.HasExited) {
+                Stop-Process -Id $wrapperProcess.Id -Force -ErrorAction SilentlyContinue
+              }
+            }
           } finally {
             $env:CODEX_JUMPBRIDGE_REAL_SSH = $oldRealSsh
+            $env:CODEX_JUMPBRIDGE_FAKE_PID_FILE = $oldFakePidFile
             if ($hadHosts) { Copy-Item -LiteralPath $hostsBackup -Destination $hostsPath -Force }
             else { Remove-Item -LiteralPath $hostsPath -Force -ErrorAction SilentlyContinue }
             Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
@@ -149,7 +242,22 @@ jobs:
             exit 1
           fi
           test "$(/bin/bash macos/codex-jumpbridge.sh --codex-jumpbridge-version)" = \
-            'codex-jumpbridge 1.4.0'
+            'codex-jumpbridge 1.4.1'
+
+          functions="$(sed -n '/^posix_quote()/,/^make_token()/p' \
+            macos/codex-jumpbridge.sh | sed '$d')"
+          eval "$functions"
+          login='CODEX_REMOTE_PAYLOAD="$1"; export CODEX_REMOTE_PAYLOAD; exec /bin/sh -c "$CODEX_REMOTE_PAYLOAD"'
+          gate="printf '%b' '\107\101\124\105\061\062\063\064'"
+          payload="$gate"'; PATH="${CODEX_INSTALL_DIR:-$HOME/.local/bin}:$PATH"; export PATH; codex app-server proxy'
+          command="sh -c $(posix_quote "$login") sh $(posix_quote "$payload")"
+          parse_posix_shell_words "$command"
+          test "${#PARSED_SHELL_WORDS[@]}" -eq 5
+          test "${PARSED_SHELL_WORDS[4]}" = "$payload"
+          extract_desktop_startup_gate "${PARSED_SHELL_WORDS[4]}"
+          test "$DESKTOP_STARTUP_GATE" = "$gate"
+          test "$DESKTOP_PROXY_PAYLOAD" = \
+            'PATH="${CODEX_INSTALL_DIR:-$HOME/.local/bin}:$PATH"; export PATH; codex app-server proxy'
 
           work="$(mktemp -d)"
           trap 'rm -rf "$work"' EXIT
@@ -197,5 +305,21 @@ jobs:
           python3 -m py_compile shared/history-sync.py
           python3 shared/history-sync.py --version
           python3 shared/history-sync.py preflight
+          history_home="$(mktemp -d)"
+          trap 'rm -rf "$history_home"' EXIT
+          mkdir -p "$history_home/.codex/sessions/2026/07/14"
+          printf '%s\n' '{"timestamp":"2026-07-14T00:00:00Z","id":"fixture"}' \
+            > "$history_home/.codex/sessions/2026/07/14/fixture.jsonl"
+          HOME="$history_home" python3 shared/history-sync.py prepare fixture \
+            | grep -q 'CODEX_JUMPBRIDGE_HISTORY_PREPARE=READY'
+          copied="$history_home/.codex-jumpbridge/history/master/sessions/2026/07/14/fixture.jsonl"
+          test -f "$copied"
+          before_inode="$(stat -f '%i' "$copied")"
+          HOME="$history_home" python3 shared/history-sync.py prepare fixture \
+            | grep -q 'CODEX_JUMPBRIDGE_HISTORY_PREPARE=READY'
+          after_inode="$(stat -f '%i' "$copied")"
+          test "$before_inode" = "$after_inode"
+          HOME="$history_home" python3 shared/history-sync.py run fixture -- \
+            /bin/sh -c 'test "$CODEX_HOME" = "$HOME/.codex-jumpbridge/history/master"'
       - name: Build macOS app and disk image
-        run: bash macos/build-app.sh 1.4.0 dist
+        run: bash macos/build-app.sh 1.4.1 dist

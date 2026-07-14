@@ -162,6 +162,17 @@ valid_proxy_url() {
     return 0
 }
 
+make_host_token() {
+    local target hash i code
+    target="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+    hash=2166136261
+    for ((i = 0; i < ${#target}; i++)); do
+        printf -v code '%d' "'${target:i:1}"
+        hash=$(( ((hash ^ code) * 16777619) & 0xffffffff ))
+    done
+    printf '%08x' "$hash"
+}
+
 if [ -n "$PROXY_URL" ] && ! valid_proxy_url "$PROXY_URL"; then
     printf 'Invalid proxy URL. Use http(s) without embedded credentials.\n' >&2
     exit 1
@@ -344,12 +355,23 @@ EOF
     history_output="$($TARGET_SSH "$alias" "$history_command" 2>&1)"
     history_rc=$?
     if [ "$history_rc" -ne 0 ] ||
-        ! printf '%s' "$history_output" | grep -q 'codex-jumpbridge-history-sync 1\.4\.0' ||
+        ! printf '%s' "$history_output" | grep -q 'codex-jumpbridge-history-sync 1\.4\.1' ||
         ! printf '%s' "$history_output" | grep -q 'CODEX_JUMPBRIDGE_HISTORY_PREFLIGHT=READY'; then
-        printf 'Remote history isolation helper installation failed on %s.\n' "$alias" >&2
+        printf 'Remote shared history helper installation failed on %s.\n' "$alias" >&2
         exit 1
     fi
-    step OK "Remote history isolation helper is ready on $alias"
+    step OK "Remote shared history helper is ready on $alias"
+
+    host_token="$(make_host_token "$alias")"
+    history_prepare_command='"$HOME/.local/bin/codex-jumpbridge-history-sync" prepare '"$host_token"
+    history_prepare_output="$($TARGET_SSH "$alias" "$history_prepare_command" 2>&1)"
+    history_prepare_rc=$?
+    if [ "$history_prepare_rc" -ne 0 ] ||
+        ! printf '%s' "$history_prepare_output" | grep -q 'CODEX_JUMPBRIDGE_HISTORY_PREPARE=READY'; then
+        printf 'Remote history preparation failed on %s. Disconnect active Codex SSH Hosts and run ./install.sh again.\n' "$alias" >&2
+        exit 1
+    fi
+    step OK "Remote history is prepared for $alias"
 done
 
 if [ "$SKIP_DOCTOR" -eq 0 ]; then

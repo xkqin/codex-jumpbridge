@@ -15,6 +15,94 @@ function Fail([string]$Message) {
     Report 'FAIL' $Message
 }
 
+function Quote-WindowsArgument([string]$Value) {
+    if ($Value.Length -gt 0 -and $Value -notmatch '[\s"]') {
+        return $Value
+    }
+    $result = [Text.StringBuilder]::new()
+    [void]$result.Append('"')
+    $backslashes = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq [char]92) {
+            $backslashes++
+        } elseif ($character -eq '"') {
+            [void]$result.Append([char]92, ($backslashes * 2) + 1)
+            [void]$result.Append('"')
+            $backslashes = 0
+        } else {
+            if ($backslashes) {
+                [void]$result.Append([char]92, $backslashes)
+                $backslashes = 0
+            }
+            [void]$result.Append($character)
+        }
+    }
+    if ($backslashes) {
+        [void]$result.Append([char]92, $backslashes * 2)
+    }
+    [void]$result.Append('"')
+    return $result.ToString()
+}
+
+function Quote-Posix([string]$Value) {
+    $quote = [string][char]39
+    $replacement = $quote + ([char]92) + $quote + $quote
+    return $quote + $Value.Replace($quote, $replacement) + $quote
+}
+
+function Test-DesktopProtocol([string]$Wrapper, [string]$Alias) {
+    $login = 'CODEX_REMOTE_PAYLOAD="$1"; export CODEX_REMOTE_PAYLOAD; exec /bin/sh -c "$CODEX_REMOTE_PAYLOAD"'
+    $gate = "printf '%b' '\107\101\124\105\061\062\063\064'"
+    $payload = $gate +
+        '; PATH="${CODEX_INSTALL_DIR:-$HOME/.local/bin}:$PATH"; ' +
+        'export PATH; codex app-server proxy'
+    $remote = 'sh -c ' + (Quote-Posix $login) +
+        ' sh ' + (Quote-Posix $payload)
+
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $Wrapper
+    $startInfo.Arguments =
+        (Quote-WindowsArgument $Alias) + ' ' +
+        (Quote-WindowsArgument $remote)
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardInput = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+
+    $process = $null
+    try {
+        $process = [Diagnostics.Process]::Start($startInfo)
+        $request =
+            "GET / HTTP/1.1`r`n" +
+            "Host: localhost`r`n" +
+            "Upgrade: websocket`r`n" +
+            "Connection: Upgrade`r`n" +
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==`r`n" +
+            "Sec-WebSocket-Version: 13`r`n`r`n"
+        $requestBytes = [Text.Encoding]::ASCII.GetBytes($request)
+        $process.StandardInput.BaseStream.Write(
+            $requestBytes, 0, $requestBytes.Length)
+        $process.StandardInput.BaseStream.Flush()
+        $responseTask = $process.StandardOutput.ReadLineAsync()
+        if (-not $responseTask.Wait(30000)) {
+            return $false
+        }
+        return $responseTask.Result.StartsWith(
+            'GATE1234HTTP/1.1 101 Switching Protocols')
+    } catch {
+        return $false
+    } finally {
+        if ($process -and -not $process.HasExited) {
+            $process.Kill()
+            $process.WaitForExit()
+        }
+        if ($process) {
+            $process.Dispose()
+        }
+    }
+}
+
 $binDir = Join-Path $HOME '.local\bin'
 $wrapper = if ($WrapperPath) { $WrapperPath } else { Join-Path $binDir 'ssh.exe' }
 $hostsFile = Join-Path $HOME '.codex-jumpbridge\hosts.txt'
@@ -107,11 +195,11 @@ $historyProbe = & $wrapper $HostAlias (
     '"$HOME/.local/bin/codex-jumpbridge-history-sync" status && ' +
     '"$HOME/.local/bin/codex-jumpbridge-history-sync" preflight') 2>$null
 if ($LASTEXITCODE -eq 0 -and
-    $historyProbe -match 'CODEX_JUMPBRIDGE_HISTORY_SYNC=1\.4\.0' -and
+    $historyProbe -match 'CODEX_JUMPBRIDGE_HISTORY_SYNC=1\.4\.1' -and
     $historyProbe -match 'CODEX_JUMPBRIDGE_HISTORY_PREFLIGHT=READY') {
-    Report 'OK' 'Remote per-Host history isolation is ready'
+    Report 'OK' 'Remote shared history coordination is ready'
 } else {
-    Fail 'Remote history isolation helper is missing; rerun install.ps1'
+    Fail 'Remote shared history helper is missing; rerun install.ps1'
 }
 
 $proxyUrl = $null
@@ -149,6 +237,12 @@ if ($networkExitCode -eq 0 -and $httpMatch.Success) {
     Report 'OK' "OpenAI route works (HTTP $($httpMatch.Groups[1].Value))"
 } else {
     Fail 'OpenAI route failed; open codex-jumpbridge-setup.ps1 and test the cluster proxy'
+}
+
+if (Test-DesktopProtocol -Wrapper $wrapper -Alias $HostAlias) {
+    Report 'OK' 'Codex Desktop startup gate and WebSocket upgrade work'
+} else {
+    Fail 'Codex Desktop protocol probe failed; update JumpBridge and disconnect stale SSH sessions'
 }
 
 if ($failed) {

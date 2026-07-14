@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Isolate Codex state per SSH Host and synchronize durable thread history."""
+"""Coordinate one shared Codex home across T-cluster SSH Hosts."""
 
 from __future__ import print_function
 
@@ -18,11 +18,12 @@ import tempfile
 import time
 
 
-VERSION = "1.4.0"
+VERSION = "1.4.1"
 ACTIVE_EXIT_CODE = 87
 HISTORY_EXIT_CODE = 88
 COORDINATION_EXIT_CODE = 89
 COORDINATION_STATES = ("starting", "ready", "stopping", "recovering")
+SHARED_HOME_LAYOUT = 2
 THREAD_ID_RE = re.compile(
     r"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
     r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.jsonl$")
@@ -113,9 +114,32 @@ def atomic_write(path, content, mode=0o600):
             os.unlink(temporary)
 
 
+def same_snapshot(source, destination):
+    try:
+        source_stat = os.stat(source)
+        destination_stat = os.stat(destination)
+    except OSError:
+        return False
+    return (
+        source_stat.st_size == destination_stat.st_size
+        and getattr(
+            source_stat,
+            "st_mtime_ns",
+            int(source_stat.st_mtime * 1000000000),
+        )
+        == getattr(
+            destination_stat,
+            "st_mtime_ns",
+            int(destination_stat.st_mtime * 1000000000),
+        )
+    )
+
+
 def stable_copy(source, destination, attempts=4):
     ensure_dir(os.path.dirname(destination))
     for attempt in range(attempts):
+        if same_snapshot(source, destination):
+            return True
         try:
             before = os.stat(source)
         except OSError:
@@ -348,10 +372,36 @@ def synchronize_in(root, legacy_home, master_home, host_home):
     selected = choose_rollouts(homes)
     sync_rollouts(selected, master_home, exact=True)
     merge_session_index(homes, master_home)
-    selected = choose_rollouts([master_home])
-    sync_rollouts(selected, host_home, exact=True)
-    copy_session_index(master_home, host_home)
-    link_shared_items(legacy_home, host_home)
+    link_shared_items(legacy_home, master_home)
+
+
+def shared_home_marker(root):
+    return os.path.join(root, "shared-home-v%d.json" % SHARED_HOME_LAYOUT)
+
+
+def shared_home_is_prepared(root):
+    path = shared_home_marker(root)
+    try:
+        with open(path, "r", encoding="utf-8") as stream:
+            payload = json.load(stream)
+    except (IOError, OSError, TypeError, ValueError):
+        return False
+    return payload.get("layout") == SHARED_HOME_LAYOUT
+
+
+def prepare_shared_home(
+        root, legacy_home, master_home, host_home, force=False):
+    """Import older homes once, then use the master home directly."""
+    if force or not shared_home_is_prepared(root):
+        synchronize_in(root, legacy_home, master_home, host_home)
+        atomic_write(
+            shared_home_marker(root),
+            json.dumps({
+                "layout": SHARED_HOME_LAYOUT,
+                "prepared_at": int(time.time()),
+            }, sort_keys=True, separators=(",", ":")) + "\n")
+    else:
+        link_shared_items(legacy_home, master_home)
 
 
 def synchronize_out(root, legacy_home, master_home, host_home):
@@ -743,7 +793,6 @@ def recover_stale_active(
     host_home = os.path.join(root, "hosts", host_token, "codex-home")
     try:
         stop_app_server(host_token)
-        synchronize_out(root, legacy_home, master_home, host_home)
     except Exception as error:
         eprint(
             "Codex JumpBridge: stale Host recovery failed for %s: %s"
@@ -906,7 +955,7 @@ def mark_connection_ready(root, lease):
 
 def leave_connection(
         root, legacy_home, master_home, host_token, host_home, lease):
-    """Release one proxy and finalize history only when it is the last one."""
+    """Release one proxy and stop the shared app-server for the last one."""
     coordination = acquire_coordination_lock(root)
     try:
         live = scan_live_leases(root, lease)
@@ -947,10 +996,9 @@ def leave_connection(
     synchronized = True
     try:
         stop_app_server(host_token)
-        synchronize_out(root, legacy_home, master_home, host_home)
     except Exception as error:
         synchronized = False
-        eprint("Codex JumpBridge: history write-back failed: %s" % error)
+        eprint("Codex JumpBridge: app-server shutdown failed: %s" % error)
 
     coordination = acquire_coordination_lock(root)
     try:
@@ -1054,14 +1102,22 @@ def run(host_token, command):
                       if stopping[0] else admission_result)
         elif is_starter:
             stop_app_server(host_token)
-            synchronize_in(root, legacy_home, master_home, host_home)
+            prepare_shared_home(
+                root,
+                legacy_home,
+                master_home,
+                host_home,
+                force=(os.environ.get(
+                    "CODEX_JUMPBRIDGE_FORCE_HISTORY_PREPARE", "0") == "1"))
             mark_connection_ready(root, lease)
 
         if lease is not None and stopping[0]:
             result = 128 + (received_signal[0] or 1)
         elif lease is not None:
             environment = os.environ.copy()
-            environment["CODEX_HOME"] = host_home
+            # One active Host generation owns this shared home. Using it
+            # directly removes thousands of NFS copies from every reconnect.
+            environment["CODEX_HOME"] = master_home
             environment["CODEX_JUMPBRIDGE_LEGACY_CODEX_HOME"] = legacy_home
             environment["CODEX_JUMPBRIDGE_RUN_DIR"] = ensure_run_directory()
             child[0] = subprocess.Popen(
@@ -1132,6 +1188,21 @@ def status():
     return 0
 
 
+def prepare(host_token):
+    previous = os.environ.get("CODEX_JUMPBRIDGE_FORCE_HISTORY_PREPARE")
+    os.environ["CODEX_JUMPBRIDGE_FORCE_HISTORY_PREPARE"] = "1"
+    try:
+        result = run(host_token, ["/bin/true"])
+    finally:
+        if previous is None:
+            os.environ.pop("CODEX_JUMPBRIDGE_FORCE_HISTORY_PREPARE", None)
+        else:
+            os.environ["CODEX_JUMPBRIDGE_FORCE_HISTORY_PREPARE"] = previous
+    if result == 0:
+        print("CODEX_JUMPBRIDGE_HISTORY_PREPARE=READY")
+    return result
+
+
 def main(arguments):
     if arguments in (["--version"], ["version"]):
         print("codex-jumpbridge-history-sync %s" % VERSION)
@@ -1140,10 +1211,13 @@ def main(arguments):
         return status()
     if arguments == ["preflight"]:
         return preflight()
+    if len(arguments) == 2 and arguments[0] == "prepare":
+        return prepare(arguments[1])
     if len(arguments) >= 4 and arguments[0] == "run" and arguments[2] == "--":
         return run(arguments[1], arguments[3:])
     eprint(
-        "Usage: codex-jumpbridge-history-sync run <host-token> -- <command> [args...]")
+        "Usage: codex-jumpbridge-history-sync prepare <host-token> | "
+        "run <host-token> -- <command> [args...]")
     return 2
 
 
