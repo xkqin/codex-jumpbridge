@@ -105,11 +105,15 @@ function Get-SshAliases([string]$Path) {
     return $aliases | Select-Object -Unique
 }
 
-function Test-TClusterAlias([string]$Alias, [string]$SshPath) {
+function Test-TClusterAlias(
+    [string]$Alias,
+    [string]$SshPath,
+    [string]$ConfigPath
+) {
     if ($Alias -match '(?i)^jump[-_]t[0-9]+(?:[-_]|$)') {
         return $true
     }
-    $expanded = & $SshPath -G $Alias 2>$null
+    $expanded = & $SshPath -F $ConfigPath -G $Alias 2>$null
     if ($LASTEXITCODE -ne 0) {
         return $false
     }
@@ -118,8 +122,12 @@ function Test-TClusterAlias([string]$Alias, [string]$SshPath) {
     return $remoteUser -match '^[^@]+@[^@]+@[^@]+$'
 }
 
-function Test-SshPrivateKey([string]$Alias, [string]$SshPath) {
-    $expanded = & $SshPath -G $Alias 2>$null
+function Test-SshPrivateKey(
+    [string]$Alias,
+    [string]$SshPath,
+    [string]$ConfigPath
+) {
+    $expanded = & $SshPath -F $ConfigPath -G $Alias 2>$null
     if ($LASTEXITCODE -ne 0) {
         return $false
     }
@@ -150,7 +158,7 @@ if (-not (Test-Path -LiteralPath $realSsh)) {
 Write-Step 'OK' 'Found Windows OpenSSH'
 
 $detected = @(Get-SshAliases $sshConfig | Where-Object {
-    Test-TClusterAlias -Alias $_ -SshPath $realSsh
+    Test-TClusterAlias -Alias $_ -SshPath $realSsh -ConfigPath $sshConfig
 })
 if (-not $HostAlias -or $HostAlias.Count -eq 0) {
     $HostAlias = $detected
@@ -163,7 +171,8 @@ if (-not $HostAlias -or $HostAlias.Count -eq 0) {
 $HostAlias = @($HostAlias | Where-Object { $_ } | Select-Object -Unique)
 Write-Step 'OK' ("Hosts: " + ($HostAlias -join ', '))
 foreach ($alias in $HostAlias) {
-    if (-not (Test-SshPrivateKey -Alias $alias -SshPath $realSsh)) {
+    if (-not (Test-SshPrivateKey `
+        -Alias $alias -SshPath $realSsh -ConfigPath $sshConfig)) {
         throw @"
 No local SSH private key referenced by $alias was found.
 Each user must use their own private key (for example ~/.ssh/id_rsa) and register
@@ -184,7 +193,7 @@ $sourceIsNewer = (Test-Path -LiteralPath $bundledWrapper) -and
     (Test-Path -LiteralPath $wrapperSource) -and
     ((Get-Item -LiteralPath $wrapperSource).LastWriteTimeUtc -gt
      (Get-Item -LiteralPath $bundledWrapper).LastWriteTimeUtc)
-if ($bundledVersion -ne 'codex-jumpbridge 1.4.2' -or $sourceIsNewer) {
+if ($bundledVersion -ne 'codex-jumpbridge 1.4.3' -or $sourceIsNewer) {
     & (Join-Path $PSScriptRoot 'build.ps1') | Out-Null
     Write-Step 'OK' 'Built Codex JumpBridge'
 } else {
@@ -197,7 +206,7 @@ $backupDir = Join-Path $configDir 'backup'
 New-Item -ItemType Directory -Force -Path $binDir, $configDir, $backupDir | Out-Null
 
 $targetSsh = Join-Path $binDir 'ssh.exe'
-$expectedVersion = 'codex-jumpbridge 1.4.2'
+$expectedVersion = 'codex-jumpbridge 1.4.3'
 $installedVersion = if (Test-Path -LiteralPath $targetSsh) {
     ((& $targetSsh --codex-jumpbridge-version 2>$null) | Out-String).Trim()
 } else {

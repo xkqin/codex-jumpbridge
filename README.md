@@ -105,8 +105,8 @@ Status: READY
 
 也可以打开 [GitHub Releases](https://github.com/xkqin/codex-jumpbridge/releases/latest)：
 
-- **Windows 10/11：**下载并双击 `Codex-JumpBridge-Windows-v1.4.2.exe`。
-- **macOS 11+：**下载 `Codex-JumpBridge-macOS-v1.4.2.dmg`，将 App 拖入“应用程序”后运行。
+- **Windows 10/11：**下载并双击 `Codex-JumpBridge-Windows-v1.4.3.exe`。
+- **macOS 11+：**下载 `Codex-JumpBridge-macOS-v1.4.3.dmg`，将 App 拖入“应用程序”后运行。
 
 > [!WARNING]
 > **内部使用版本仅进行 ad-hoc 签名，未进行 Apple Developer ID 公证。** 请只从本仓库 Release 下载，并先核对
@@ -240,9 +240,9 @@ app-server，不会删除或改写 `~/.codex/config.toml` 中的 MCP 配置。
 
 ### Q：一个 Host 已连接，其他 Host 显示失败怎么办？
 
-`v1.4.2` 不使用历史互斥锁，多个 Host 可以同时连接。若升级后仍看到退出码 87 或
+`v1.4.2+` 不使用历史互斥锁，多个 Host 可以同时连接。若升级后仍看到退出码 87 或
 “SSH 连接失败”，请完全退出并重新打开 Codex Desktop，确认 `ssh --codex-jumpbridge-version`
-显示 `1.4.2`，再逐个运行 doctor 检查 SSH、远端运行文件和代理。
+显示 `1.4.3`，再逐个运行 doctor 检查 SSH、远端运行文件和代理。
 
 ### Q：提示缺少 SSH 私钥怎么办？
 

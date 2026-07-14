@@ -30,7 +30,7 @@ internal static class CodexJumpBridge
             (args[0] == "--codex-jumpbridge-version" ||
              args[0] == "--codex-t-wrapper-version"))
         {
-            Console.WriteLine("codex-jumpbridge 1.4.2");
+            Console.WriteLine("codex-jumpbridge 1.4.3");
             return 0;
         }
 

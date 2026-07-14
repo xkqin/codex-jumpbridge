@@ -1,3 +1,15 @@
+## Codex JumpBridge 1.4.3
+
+本版本把“新用户第一次安装即可连接和对话”纳入 Windows/macOS 自动回归：
+
+- Windows 与 macOS 都会在空安装状态执行真实安装脚本、远端准备和完整 doctor。
+- SSH alias 与私钥检查显式使用刚扫描的 `~/.ssh/config`，避免 Codex HOME 与系统默认目录不一致时误判。
+- 继续直接使用远端原生 `~/.codex`，不恢复共享历史锁；多个计算节点仍可同时在线。
+- 已验证 Desktop WebSocket 协议可完成 `initialize`、`thread/start`、`turn/start` 并收到模型回复。
+
+- **Windows 10/11：**运行 `Codex-JumpBridge-Windows-v1.4.3.exe`。
+- **macOS 11+：**打开 `Codex-JumpBridge-macOS-v1.4.3.dmg`，将 App 拖入“应用程序”后运行。
+
 ## Codex JumpBridge 1.4.2
 
 本版本移除运行时共享历史锁，让多个计算节点按 VS Code/Cursor Codex 插件的方式直接使用

@@ -82,7 +82,7 @@ is_t_cluster_alias() {
     if printf '%s' "$alias" | grep -Eqi '^jump[-_]t[0-9]+([-_]|$)'; then
         return 0
     fi
-    expanded="$(/usr/bin/ssh -G "$alias" 2>/dev/null || true)"
+    expanded="$(/usr/bin/ssh -F "$SSH_CONFIG" -G "$alias" 2>/dev/null || true)"
     remote_user="$(printf '%s\n' "$expanded" | awk '$1 == "user" { print $2; exit }')"
     printf '%s' "$remote_user" | grep -Eq '^[^@]+@[^@]+@[^@]+$'
 }
@@ -98,7 +98,8 @@ has_private_key() {
             \~/*) path="${HOME}/${path:2}" ;;
         esac
         [ -f "$path" ] && return 0
-    done < <(/usr/bin/ssh -G "$alias" 2>/dev/null | awk '$1 == "identityfile" { print $2 }')
+    done < <(/usr/bin/ssh -F "$SSH_CONFIG" -G "$alias" 2>/dev/null |
+        awk '$1 == "identityfile" { print $2 }')
     return 1
 }
 

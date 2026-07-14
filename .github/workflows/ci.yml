@@ -18,7 +18,8 @@ jobs:
             'windows/setup.ps1',
             'windows/doctor.ps1',
             'windows/repair-thread-assignments.ps1',
-            'windows/uninstall.ps1'
+            'windows/uninstall.ps1',
+            '.github/scripts/windows-clean-install.ps1'
           )
           foreach ($file in $files) {
             $errors = $null
@@ -34,7 +35,7 @@ jobs:
         run: |
           .\windows\build.ps1
           $version = .\windows\codex-jumpbridge.exe --codex-jumpbridge-version
-          if ($version -ne 'codex-jumpbridge 1.4.2') {
+          if ($version -ne 'codex-jumpbridge 1.4.3') {
             throw "Unexpected version: $version"
           }
       - name: Rewrite current Codex Desktop SSH payload safely
@@ -230,6 +231,9 @@ jobs:
             throw 'Windows package builder still references the history lock helper'
           }
           .\windows\build-release.ps1 -OutputDirectory dist
+      - name: Install Windows from zero and run doctor
+        shell: powershell
+        run: .\.github\scripts\windows-clean-install.ps1
   macos:
     runs-on: macos-14
     steps:
@@ -240,7 +244,8 @@ jobs:
             macos/app-launcher.sh macos/build-app.sh \
             macos/setup-macos.sh macos/doctor-macos.sh \
             macos/repair-thread-assignments.sh macos/uninstall.sh \
-            shared/remote-prepare.sh
+            shared/remote-prepare.sh \
+            .github/scripts/macos-clean-install.sh
       - name: Check native history migration
         run: |
           set -eu
@@ -287,7 +292,7 @@ jobs:
             exit 1
           fi
           test "$(/bin/bash macos/codex-jumpbridge.sh --codex-jumpbridge-version)" = \
-            'codex-jumpbridge 1.4.2'
+            'codex-jumpbridge 1.4.3'
 
           functions="$(sed -n '/^posix_quote()/,/^make_token()/p' \
             macos/codex-jumpbridge.sh | sed '$d')"
@@ -346,4 +351,6 @@ jobs:
           test "$rc" -eq 87
           test ! -s "$work/busy"
       - name: Build macOS app and disk image
-        run: bash macos/build-app.sh 1.4.2 dist
+        run: bash macos/build-app.sh 1.4.3 dist
+      - name: Install macOS from zero and run doctor
+        run: bash .github/scripts/macos-clean-install.sh

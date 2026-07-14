@@ -47,7 +47,7 @@ function Test-TClusterAlias([string]$Alias) {
     if (-not (Test-Path -LiteralPath $realSshPath)) {
         return $false
     }
-    $expanded = & $realSshPath -G $Alias 2>$null
+    $expanded = & $realSshPath -F $sshConfigPath -G $Alias 2>$null
     if ($LASTEXITCODE -ne 0) {
         return $false
     }
@@ -63,7 +63,7 @@ function Get-SshHostPriority([string]$Alias) {
     if (-not (Test-Path -LiteralPath $realSshPath)) {
         return 2
     }
-    $expanded = & $realSshPath -G $Alias 2>$null
+    $expanded = & $realSshPath -F $sshConfigPath -G $Alias 2>$null
     $hostLine = ($expanded | Select-String '^hostname\s+' | Select-Object -First 1).Line
     $hostName = if ($hostLine) { ($hostLine -split '\s+', 2)[1] } else { '' }
     if ($hostName -match '(?i)^jump\.') {
@@ -73,7 +73,7 @@ function Get-SshHostPriority([string]$Alias) {
 }
 
 function Test-SshPrivateKey([string]$Alias) {
-    $expanded = & $realSshPath -G $Alias 2>$null
+    $expanded = & $realSshPath -F $sshConfigPath -G $Alias 2>$null
     if ($LASTEXITCODE -ne 0) {
         return $false
     }
