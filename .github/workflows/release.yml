@@ -56,6 +56,13 @@ jobs:
         run: |
           awk 'NR > 1 && /^## / { exit } { print }' RELEASE_NOTES.md \
             > current-release-notes.md
-          gh release create "$GITHUB_REF_NAME" release-assets/* \
-            --title "Codex JumpBridge $GITHUB_REF_NAME" \
-            --notes-file current-release-notes.md
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" \
+              --title "Codex JumpBridge $GITHUB_REF_NAME" \
+              --notes-file current-release-notes.md
+            gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" release-assets/* \
+              --title "Codex JumpBridge $GITHUB_REF_NAME" \
+              --notes-file current-release-notes.md
+          fi
