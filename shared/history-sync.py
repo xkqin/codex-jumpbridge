@@ -1192,7 +1192,7 @@ def prepare(host_token):
     previous = os.environ.get("CODEX_JUMPBRIDGE_FORCE_HISTORY_PREPARE")
     os.environ["CODEX_JUMPBRIDGE_FORCE_HISTORY_PREPARE"] = "1"
     try:
-        result = run(host_token, ["/bin/true"])
+        result = run(host_token, ["/bin/sh", "-c", ":"])
     finally:
         if previous is None:
             os.environ.pop("CODEX_JUMPBRIDGE_FORCE_HISTORY_PREPARE", None)
