@@ -1,5 +1,5 @@
 param(
-    [string]$Version = '1.4.3',
+    [string]$Version = '1.4.4',
     [string]$OutputDirectory = (Join-Path (Split-Path $PSScriptRoot -Parent) 'dist')
 )
 

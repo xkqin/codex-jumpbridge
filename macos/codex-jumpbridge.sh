@@ -4,7 +4,7 @@
 
 set -u
 
-VERSION='1.4.3'
+VERSION='1.4.4'
 REAL_SSH="${CODEX_JUMPBRIDGE_REAL_SSH:-/usr/bin/ssh}"
 CONFIG_DIR="${HOME}/.codex-jumpbridge"
 HOSTS_FILE="${CONFIG_DIR}/hosts.txt"
@@ -415,20 +415,44 @@ mkfifo "$input_fifo" "$output_fifo" || {
 
 ssh_pid=''
 writer_pid=''
+stop_pid() {
+    local target="$1"
+    local attempt=0
+    [ -n "$target" ] || return 0
+    if kill -0 "$target" 2>/dev/null; then
+        kill "$target" 2>/dev/null || true
+        while kill -0 "$target" 2>/dev/null && [ "$attempt" -lt 20 ]; do
+            sleep 0.1
+            attempt=$((attempt + 1))
+        done
+        if kill -0 "$target" 2>/dev/null; then
+            kill -9 "$target" 2>/dev/null || true
+        fi
+    fi
+    wait "$target" 2>/dev/null || true
+}
 cleanup() {
+    trap - HUP INT TERM
     if [ -n "$writer_pid" ]; then
-        kill "$writer_pid" 2>/dev/null || true
-        wait "$writer_pid" 2>/dev/null || true
+        stop_pid "$writer_pid"
         writer_pid=''
     fi
     if [ -n "$ssh_pid" ]; then
-        kill "$ssh_pid" 2>/dev/null || true
-        wait "$ssh_pid" 2>/dev/null || true
+        stop_pid "$ssh_pid"
         ssh_pid=''
     fi
     rm -rf "$temp_dir"
 }
-trap cleanup EXIT HUP INT TERM
+terminate() {
+    local status="$1"
+    trap - EXIT HUP INT TERM
+    cleanup
+    exit "$status"
+}
+trap cleanup EXIT
+trap 'terminate 129' HUP
+trap 'terminate 130' INT
+trap 'terminate 143' TERM
 
 "$REAL_SSH" "${ssh_args[@]}" < "$input_fifo" > "$output_fifo" &
 ssh_pid=$!

@@ -1,3 +1,15 @@
+## Codex JumpBridge 1.4.4
+
+本版本仅修复 macOS 安装与 doctor 进程回收问题，不改变集群节点路由策略：
+
+- 修复 macOS 自带 Bash 3.2 在自动扫描首个 SSH Host 时因空数组触发 `unbound variable`。
+- doctor 完成 WebSocket 101 检查后会可靠结束测试 SSH；子进程不响应 TERM 时自动升级为 KILL，避免安装永久卡住。
+- macOS wrapper 收到 HUP、INT 或 TERM 后会退出并清理 OpenSSH/输入转发子进程，不再留下失败重试。
+- CI 覆盖无 `--host` 自动扫描和不响应 TERM 的测试 SSH，防止上述问题回归。
+
+- **Windows 10/11：**运行 `Codex-JumpBridge-Windows-v1.4.4.exe`。
+- **macOS 11+：**打开 `Codex-JumpBridge-macOS-v1.4.4.dmg`，将 App 拖入“应用程序”后运行。
+
 ## Codex JumpBridge 1.4.3
 
 本版本把“新用户第一次安装即可连接和对话”纳入 Windows/macOS 自动回归：

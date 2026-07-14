@@ -54,6 +54,22 @@ read_proxy() {
     return 1
 }
 
+stop_probe_process() {
+    local pid="$1"
+    local attempt=0
+    if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null || true
+        while kill -0 "$pid" 2>/dev/null && [ "$attempt" -lt 20 ]; do
+            sleep 0.1
+            attempt=$((attempt + 1))
+        done
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -9 "$pid" 2>/dev/null || true
+        fi
+    fi
+    wait "$pid" 2>/dev/null || true
+}
+
 desktop_protocol_probe() {
     local login gate payload remote work request output error pid attempt ok
     login='CODEX_REMOTE_PAYLOAD="$1"; export CODEX_REMOTE_PAYLOAD; exec /bin/sh -c "$CODEX_REMOTE_PAYLOAD"'
@@ -80,8 +96,7 @@ desktop_protocol_probe() {
         sleep 0.1
         attempt=$((attempt + 1))
     done
-    kill "$pid" 2>/dev/null || true
-    wait "$pid" 2>/dev/null || true
+    stop_probe_process "$pid"
     rm -rf "$work"
     return "$ok"
 }

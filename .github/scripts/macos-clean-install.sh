@@ -52,6 +52,7 @@ chmod 755 "${WORK}/launchctl"
 cat > "${WORK}/fake-ssh" <<'EOF'
 #!/bin/bash
 set -eu
+trap '' HUP INT TERM
 if [ "${1:-}" = '-G' ]; then
     printf '%s\n' 'hostname 127.0.0.1' 'user ci'
     exit 0
@@ -71,8 +72,7 @@ printf '%s\n' "$marker"
 if [[ "$bootstrap" == *'app-server proxy'* ]]; then
     sleep 0.25
     printf 'GATE1234HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n'
-    sleep 0.25
-    exit 0
+    while :; do sleep 1; done
 fi
 printf '%s\n' \
     'CODEX_JUMPBRIDGE_REMOTE_OK' \
@@ -91,14 +91,13 @@ export CODEX_JUMPBRIDGE_REAL_SSH="${WORK}/fake-ssh"
 export PATH="${WORK}:${PATH}"
 
 bash "${ROOT}/macos/install.sh" \
-    --host jump-T208-CI \
     --proxy http://proxy.invalid:8080 \
     > "${WORK}/install.out" 2> "${WORK}/install.err"
 
 grep -q 'Status: READY' "${WORK}/install.out"
 test -x "${HOME}/.local/bin/ssh"
 test "$("${HOME}/.local/bin/ssh" --codex-jumpbridge-version)" = \
-    'codex-jumpbridge 1.4.3'
+    'codex-jumpbridge 1.4.4'
 test "$(cat "${HOME}/.codex-jumpbridge/hosts.txt")" = 'jump-T208-CI'
 grep -q $'^jump-T208-CI\thttp://proxy\.invalid:8080$' \
     "${HOME}/.codex-jumpbridge/proxies.txt"

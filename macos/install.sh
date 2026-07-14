@@ -14,6 +14,7 @@ PROXY_URL=''
 SKIP_DOCTOR=0
 SKIP_SETUP=0
 HOSTS=()
+HOST_COUNT=0
 
 step() {
     printf '[%s] %s\n' "$1" "$2"
@@ -28,7 +29,8 @@ EOF
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --host)
-            HOSTS+=("${2:-}")
+            HOSTS[$HOST_COUNT]="${2:-}"
+            HOST_COUNT=$((HOST_COUNT + 1))
             shift 2
             ;;
         --proxy)
@@ -106,17 +108,22 @@ has_private_key() {
 while IFS= read -r alias; do
     if is_t_cluster_alias "$alias"; then
         found=0
-        for configured_host in "${HOSTS[@]}"; do
-            if [ "$configured_host" = "$alias" ]; then
-                found=1
-                break
-            fi
-        done
-        [ "$found" -eq 1 ] || HOSTS+=("$alias")
+        if [ "$HOST_COUNT" -gt 0 ]; then
+            for configured_host in "${HOSTS[@]}"; do
+                if [ "$configured_host" = "$alias" ]; then
+                    found=1
+                    break
+                fi
+            done
+        fi
+        if [ "$found" -eq 0 ]; then
+            HOSTS[$HOST_COUNT]="$alias"
+            HOST_COUNT=$((HOST_COUNT + 1))
+        fi
     fi
 done < <(ssh_aliases)
 
-if [ "${#HOSTS[@]}" -eq 0 ]; then
+if [ "$HOST_COUNT" -eq 0 ]; then
     printf 'No jump-host alias was detected. Re-run with --host your-ssh-host.\n' >&2
     exit 1
 fi
