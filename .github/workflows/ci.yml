@@ -65,8 +65,11 @@ jobs:
                   {
                       return 93;
                   }
-                  Console.WriteLine(marker.Value);
-                  Console.OpenStandardOutput().Write(new byte[] { 0x81, 0x03, 0x61, 0x62, 0x63 }, 0, 5);
+                  Stream output = Console.OpenStandardOutput();
+                  byte[] markerBytes = System.Text.Encoding.ASCII.GetBytes(marker.Value + "\n");
+                  output.Write(markerBytes, 0, markerBytes.Length);
+                  output.Write(new byte[] { 0x81, 0x03, 0x61, 0x62, 0x63 }, 0, 5);
+                  output.Flush();
                   return 0;
               }
           }
@@ -100,7 +103,8 @@ jobs:
             $expectedBytes = [byte[]](0x81, 0x03, 0x61, 0x62, 0x63)
             if ($actualBytes.Length -ne $expectedBytes.Length -or
                 -not [Linq.Enumerable]::SequenceEqual($actualBytes, $expectedBytes)) {
-              throw 'Wrapper did not preserve the raw proxy stream'
+              $actualHex = [BitConverter]::ToString($actualBytes)
+              throw "Wrapper did not preserve the raw proxy stream: length=$($actualBytes.Length), hex=$actualHex"
             }
           } finally {
             $env:CODEX_JUMPBRIDGE_REAL_SSH = $oldRealSsh
@@ -136,17 +140,19 @@ jobs:
           trap 'rm -rf "$work"' EXIT
           cat > "$work/fake-ssh" <<'EOF'
           #!/bin/bash
-          test "$1" = 'Fixture'
-          test "$2" = 'sh'
+          test "$1" = 'Fixture' || exit 94
+          test "$2" = 'sh' || exit 95
           IFS= read -r bootstrap
           case "$bootstrap" in
             *'__SECURE_RUN__'*|*'>codex app-server proxy2'*|*'codex app-server proxycodex'*)
               exit 93
               ;;
           esac
-          start_only="${bootstrap%%; cd*}'"
-          marker="$(eval "$start_only")"
-          test -n "$marker"
+          marker_tail="${bootstrap#*__CODEX_JUMPBRIDGE_}"
+          marker_tail="${marker_tail%%; cd*}"
+          marker_tail="$(printf '%s' "$marker_tail" | tr -cd '[:alnum:]_')"
+          marker="__CODEX_JUMPBRIDGE_${marker_tail}"
+          test -n "$marker_tail" || exit 93
           printf 'gateway banner\r\n%s\r\n' "$marker"
           if [ "${FAKE_SSH_EXIT:-0}" -eq 87 ]; then
             exit 87

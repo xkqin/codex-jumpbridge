@@ -41,7 +41,7 @@ canonical_configured_host() {
     target_lower="$(printf '%s' "$target" | tr '[:upper:]' '[:lower:]')"
 
     if [ -n "${CODEX_JUMPBRIDGE_HOSTS:-}" ]; then
-        while IFS= read -r candidate; do
+        while IFS= read -r candidate || [ -n "$candidate" ]; do
             candidate="$(printf '%s' "$candidate" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
             [ -n "$candidate" ] || continue
             candidate_lower="$(printf '%s' "$candidate" | tr '[:upper:]' '[:lower:]')"
