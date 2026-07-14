@@ -102,6 +102,18 @@ if ($LASTEXITCODE -eq 0 -and $codexProbe -match 'codex') {
     Fail 'Remote Codex was not found in ~/.local/bin or PATH'
 }
 
+$historyProbe = & $wrapper $HostAlias (
+    'test -x "$HOME/.local/bin/codex-jumpbridge-history-sync" && ' +
+    '"$HOME/.local/bin/codex-jumpbridge-history-sync" status && ' +
+    '"$HOME/.local/bin/codex-jumpbridge-history-sync" preflight') 2>$null
+if ($LASTEXITCODE -eq 0 -and
+    $historyProbe -match 'CODEX_JUMPBRIDGE_HISTORY_SYNC=1\.4\.0' -and
+    $historyProbe -match 'CODEX_JUMPBRIDGE_HISTORY_PREFLIGHT=READY') {
+    Report 'OK' 'Remote per-Host history isolation is ready'
+} else {
+    Fail 'Remote history isolation helper is missing; rerun install.ps1'
+}
+
 $proxyUrl = $null
 if (Test-Path -LiteralPath $proxiesFile) {
     foreach ($line in Get-Content -LiteralPath $proxiesFile) {

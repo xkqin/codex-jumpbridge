@@ -38,11 +38,14 @@ for name in \
 done
 cp "${ROOT}/shared/remote-prepare.sh" \
     "${RESOURCES_DIR}/shared/remote-prepare.sh"
+cp "${ROOT}/shared/history-sync.py" \
+    "${RESOURCES_DIR}/shared/history-sync.py"
 
 chmod 755 \
     "${MACOS_DIR}/CodexJumpBridge" \
     "${RESOURCES_DIR}/macos/"*.sh \
-    "${RESOURCES_DIR}/shared/remote-prepare.sh"
+    "${RESOURCES_DIR}/shared/remote-prepare.sh" \
+    "${RESOURCES_DIR}/shared/history-sync.py"
 
 cat >"${CONTENTS_DIR}/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -78,6 +81,8 @@ cat >"${CONTENTS_DIR}/Info.plist" <<EOF
 EOF
 
 plutil -lint "${CONTENTS_DIR}/Info.plist"
+/usr/bin/codesign --force --deep --sign - --timestamp=none "$APP_DIR"
+/usr/bin/codesign --verify --deep --strict "$APP_DIR"
 
 ZIP_OUTPUT="${OUTPUT_DIR}/Codex-JumpBridge-macOS-v${VERSION}.app.zip"
 DMG_OUTPUT="${OUTPUT_DIR}/Codex-JumpBridge-macOS-v${VERSION}.dmg"

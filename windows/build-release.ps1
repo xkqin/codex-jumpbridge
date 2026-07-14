@@ -39,6 +39,8 @@ try {
     }
     Copy-Item -LiteralPath (Join-Path $root 'shared\remote-prepare.sh') `
         -Destination $payloadShared -Force
+    Copy-Item -LiteralPath (Join-Path $root 'shared\history-sync.py') `
+        -Destination $payloadShared -Force
 
     foreach ($script in Get-ChildItem -LiteralPath $payloadWindows -Filter '*.ps1') {
         $parseErrors = $null
@@ -77,10 +79,10 @@ try {
         throw "C# compiler exited with code $LASTEXITCODE"
     }
 
-    $verification = Start-Process -FilePath $output `
-        -ArgumentList '--verify-payload' -PassThru -Wait
-    if ($verification.ExitCode -ne 0) {
-        throw "Packaged installer payload verification failed with code $($verification.ExitCode)"
+    & $env:ComSpec /d /s /c ('"{0}" --verify-payload' -f $output)
+    $verificationExitCode = $LASTEXITCODE
+    if ($verificationExitCode -ne 0) {
+        throw "Packaged installer payload verification failed with code $verificationExitCode"
     }
 
     Write-Output $output

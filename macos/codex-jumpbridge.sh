@@ -135,7 +135,8 @@ make_token() {
 }
 
 make_host_token() {
-    local target="${1,,}"
+    local target
+    target="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
     local hash=2166136261
     local i code
     for ((i = 0; i < ${#target}; i++)); do
@@ -145,13 +146,42 @@ make_host_token() {
     printf '%08x' "$hash"
 }
 
+host_priority_delay() {
+    local target="$1"
+    local index=0
+    local line
+    if [ -f "$HOSTS_FILE" ]; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            line="${line#${line%%[![:space:]]*}}"
+            line="${line%${line##*[![:space:]]}}"
+            case "$line" in
+                ''|'#'*) continue ;;
+            esac
+            if [ "$line" = "$target" ]; then
+                if [ "$index" -gt 3 ]; then
+                    index=3
+                fi
+                printf '%s' "$((index * 2))"
+                return 0
+            fi
+            index=$((index + 1))
+        done < "$HOSTS_FILE"
+    fi
+    printf '0'
+}
+
 host_scoped_proxy_command() {
     local host_token="$1"
     local enable_remote_mcp="$2"
-    local command
-    command='__codex_jb_sock="${CODEX_HOME:-$HOME/.codex}/app-server-control/app-server-control-jb-__TOKEN__.sock"; __codex_jb_log="${CODEX_HOME:-$HOME/.codex}/app-server-control/app-server-jb-__TOKEN__.log"; __codex_jb_lock="$__codex_jb_sock.lock"; __codex_jb_enable_mcp=__MCP__; mkdir -p "$(dirname "$__codex_jb_sock")"; __codex_jb_probe='"'"'python3 -c "import socket,sys; s=socket.socket(socket.AF_UNIX); s.settimeout(1); s.connect(sys.argv[1]); s.close()"'"'"'; if ! eval "$__codex_jb_probe \"$__codex_jb_sock\"" >/dev/null 2>&1; then __codex_jb_wait=0; until eval "$__codex_jb_probe \"$__codex_jb_sock\"" >/dev/null 2>&1; do if mkdir "$__codex_jb_lock" 2>/dev/null; then if ! eval "$__codex_jb_probe \"$__codex_jb_sock\"" >/dev/null 2>&1; then rm -f "$__codex_jb_sock"; set --; if [ "$__codex_jb_enable_mcp" != "1" ] && [ "${CODEX_JUMPBRIDGE_ENABLE_REMOTE_MCP:-0}" != "1" ] && [ -f "${CODEX_HOME:-$HOME/.codex}/config.toml" ]; then for __codex_jb_mcp in $(sed -n '"'"'s/^[[:space:]]*\[mcp_servers\.\([A-Za-z0-9_-]*\)\][[:space:]]*$/\1/p'"'"' "${CODEX_HOME:-$HOME/.codex}/config.toml"); do set -- "$@" -c "mcp_servers.$__codex_jb_mcp.enabled=false"; done; fi; nohup codex "$@" app-server --listen "unix://$__codex_jb_sock" >"$__codex_jb_log" 2>&1 </dev/null & __codex_jb_owner_wait=0; until eval "$__codex_jb_probe \"$__codex_jb_sock\"" >/dev/null 2>&1; do __codex_jb_owner_wait=$((__codex_jb_owner_wait + 1)); if [ "$__codex_jb_owner_wait" -ge 150 ]; then rmdir "$__codex_jb_lock" 2>/dev/null || true; echo "Codex JumpBridge: remote app-server did not become ready" >&2; exit 86; fi; sleep 0.1; done; fi; rmdir "$__codex_jb_lock" 2>/dev/null || true; else sleep 0.1; fi; __codex_jb_wait=$((__codex_jb_wait + 1)); if [ "$__codex_jb_wait" -ge 200 ]; then echo "Codex JumpBridge: remote app-server did not become ready" >&2; exit 86; fi; done; fi; exec codex app-server proxy --sock "$__codex_jb_sock"'
+    local command secure_run
+    secure_run='python3 -c "import os,stat,sys; p=sys.argv[1]; os.makedirs(p,mode=0o700,exist_ok=True); f=os.open(p,os.O_RDONLY|os.O_DIRECTORY|getattr(os,\"O_NOFOLLOW\",0)); os.fchmod(f,0o700); s=os.fstat(f); os.close(f); sys.exit(0 if stat.S_ISDIR(s.st_mode) and s.st_uid==os.getuid() and (stat.S_IMODE(s.st_mode)&0o077)==0 else 1)"'
+    command='__codex_jb_run="${CODEX_JUMPBRIDGE_RUN_DIR:-${XDG_RUNTIME_DIR:-/tmp}/codex-jumpbridge-$(id -u)}"; __codex_jb_sock="$__codex_jb_run/as-__TOKEN__.sock"; __codex_jb_log="$__codex_jb_run/as-__TOKEN__.log"; __codex_jb_pid="$__codex_jb_run/as-__TOKEN__.pid"; __codex_jb_lock="$__codex_jb_sock.lock"; __codex_jb_enable_mcp=__MCP__; umask 077; if ! __SECURE_RUN__ "$__codex_jb_run"; then echo "Codex JumpBridge: unsafe remote runtime directory" >&2; exit 84; fi; if [ "${#__codex_jb_sock}" -gt 100 ]; then echo "Codex JumpBridge: remote socket path is too long" >&2; exit 85; fi; __codex_jb_probe='"'"'python3 -c "import socket,sys; s=socket.socket(socket.AF_UNIX); s.settimeout(1); s.connect(sys.argv[1]); s.close()"'"'"'; if ! eval "$__codex_jb_probe \"$__codex_jb_sock\"" >/dev/null 2>&1; then __codex_jb_wait=0; until eval "$__codex_jb_probe \"$__codex_jb_sock\"" >/dev/null 2>&1; do if mkdir "$__codex_jb_lock" 2>/dev/null; then if ! eval "$__codex_jb_probe \"$__codex_jb_sock\"" >/dev/null 2>&1; then rm -f "$__codex_jb_sock"; set --; if [ "$__codex_jb_enable_mcp" != "1" ] && [ "${CODEX_JUMPBRIDGE_ENABLE_REMOTE_MCP:-0}" != "1" ] && [ -f "${CODEX_HOME:-$HOME/.codex}/config.toml" ]; then for __codex_jb_mcp in $(sed -n '"'"'s/^[[:space:]]*\[mcp_servers\.\([A-Za-z0-9_-]*\)\][[:space:]]*$/\1/p'"'"' "${CODEX_HOME:-$HOME/.codex}/config.toml"); do set -- "$@" -c "mcp_servers.$__codex_jb_mcp.enabled=false"; done; fi; nohup codex "$@" app-server --listen "unix://$__codex_jb_sock" >"$__codex_jb_log" 2>&1 </dev/null & __codex_jb_server_pid=$!; printf '"'"'%s\n'"'"' "$__codex_jb_server_pid" >"$__codex_jb_pid"; __codex_jb_owner_wait=0; until eval "$__codex_jb_probe \"$__codex_jb_sock\"" >/dev/null 2>&1; do __codex_jb_owner_wait=$((__codex_jb_owner_wait + 1)); if [ "$__codex_jb_owner_wait" -ge 150 ]; then rmdir "$__codex_jb_lock" 2>/dev/null || true; echo "Codex JumpBridge: remote app-server did not become ready" >&2; exit 86; fi; sleep 0.1; done; fi; rmdir "$__codex_jb_lock" 2>/dev/null || true; else sleep 0.1; fi; __codex_jb_wait=$((__codex_jb_wait + 1)); if [ "$__codex_jb_wait" -ge 200 ]; then echo "Codex JumpBridge: remote app-server did not become ready" >&2; exit 86; fi; done; fi; exec codex app-server proxy --sock "$__codex_jb_sock"'
     command="${command//__TOKEN__/$host_token}"
-    printf '%s' "${command//__MCP__/$enable_remote_mcp}"
+    command="${command//__MCP__/$enable_remote_mcp}"
+    printf '%s%s%s' \
+        "${command%%__SECURE_RUN__*}" \
+        "$secure_run" \
+        "${command#*__SECURE_RUN__}"
 }
 
 args=("$@")
@@ -214,14 +244,26 @@ if [ "$is_streaming" -eq 0 ] &&
     remote_command="CODEX_SSH_SKIP_APP_SERVER_BOOT=true ${remote_command}"
 fi
 
+history_busy_marker=''
 if [ "$is_streaming" -eq 1 ]; then
-    host_token="$(make_host_token "${host_alias,,}")"
+    host_token="$(make_host_token "$host_alias")"
     enable_remote_mcp=0
     if remote_mcp_enabled "$host_alias"; then
         enable_remote_mcp=1
     fi
     proxy_command="$(host_scoped_proxy_command "$host_token" "$enable_remote_mcp")"
-    remote_command="${remote_command/codex app-server proxy/$proxy_command}"
+    proxy_placeholder='codex app-server proxy'
+    remote_prefix="${remote_command%%"$proxy_placeholder"*}"
+    remote_suffix="${remote_command#*"$proxy_placeholder"}"
+    remote_command="${remote_prefix}${proxy_command}${remote_suffix}"
+    history_helper='${HOME}/.local/bin/codex-jumpbridge-history-sync'
+    quoted_history_command="$(posix_quote "$remote_command")"
+    priority_delay="$(host_priority_delay "$host_alias")"
+    delay_command=''
+    if [ "$priority_delay" -gt 0 ]; then
+        delay_command="if [ \"\${CODEX_JUMPBRIDGE_DISABLE_PRIORITY_DELAY:-0}\" != \"1\" ]; then sleep ${priority_delay}; fi; "
+    fi
+    remote_command="if [ -x \"${history_helper}\" ] && [ \"\${CODEX_JUMPBRIDGE_DISABLE_HISTORY_SYNC:-0}\" != \"1\" ] && \"${history_helper}\" preflight >/dev/null 2>&1; then ${delay_command}CODEX_JUMPBRIDGE_EXPECT_APP_SERVER=1 CODEX_JUMPBRIDGE_BUSY_MARKER=$(posix_quote "$history_busy_marker") \"${history_helper}\" run ${host_token} -- /bin/sh -c ${quoted_history_command}; __codex_jb_history_rc=\$?; exit \"\$__codex_jb_history_rc\"; else exec /bin/sh -c ${quoted_history_command}; fi"
 fi
 
 launches_app_server=0
@@ -297,10 +339,25 @@ exec 9<&0
 writer_pid=$!
 exec 9<&-
 
-# Gateway login notices can arrive on stdout; discard them before our marker.
-awk -v start="$start_marker" \
-    -v prefix="$([ "$is_streaming" -eq 1 ] && printf '' || printf '%s' "$completion_prefix")" \
-    -v started="$started_file" '
+# The proxy carries an HTTP Upgrade followed by binary WebSocket frames. Read
+# only the textual gateway preamble, then hand the remaining descriptor to cat
+# so no line-oriented tool can rewrite protocol bytes.
+if [ "$is_streaming" -eq 1 ]; then
+    while IFS= read -r gateway_line; do
+        case "$gateway_line" in
+            *"$start_marker"*)
+                : > "$started_file"
+                cat
+                break
+                ;;
+        esac
+    done < "$output_fifo"
+    filter_rc=$?
+else
+    # Non-streaming commands are textual and end with a private exit marker.
+    awk -v start="$start_marker" \
+        -v prefix="$completion_prefix" \
+        -v started="$started_file" '
 BEGIN { remote_rc = 0; completed = 0; seen_start = 0 }
 {
     if (!seen_start) {
@@ -337,7 +394,8 @@ END {
     if (!completed) exit 0
 }
 ' "$output_fifo"
-filter_rc=$?
+    filter_rc=$?
+fi
 
 if [ ! -f "$started_file" ]; then
     result=255

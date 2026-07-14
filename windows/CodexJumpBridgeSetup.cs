@@ -157,7 +157,8 @@ internal static class CodexJumpBridgeSetup
                 Path.Combine(workDirectory, "windows", "install.ps1"),
                 Path.Combine(workDirectory, "windows", "setup.ps1"),
                 Path.Combine(workDirectory, "windows", "codex-jumpbridge.exe"),
-                Path.Combine(workDirectory, "shared", "remote-prepare.sh")
+                Path.Combine(workDirectory, "shared", "remote-prepare.sh"),
+                Path.Combine(workDirectory, "shared", "history-sync.py")
             };
             foreach (string path in required)
             {

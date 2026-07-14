@@ -5,6 +5,7 @@ set -u
 BIN_DIR="${HOME}/.local/bin"
 CONFIG_DIR="${HOME}/.codex-jumpbridge"
 WRAPPER="${BIN_DIR}/ssh"
+PATH_AGENT="${HOME}/Library/LaunchAgents/com.xkqin.codex-jumpbridge-path.plist"
 HOST_ALIAS=''
 FAILED=0
 
@@ -62,6 +63,18 @@ version="$($WRAPPER --codex-jumpbridge-version 2>/dev/null || true)"
 case "$version" in
     codex-jumpbridge*) report OK "$version" ;;
     *) fail 'Installed ssh is not Codex JumpBridge' ;;
+esac
+
+if [ -f "$PATH_AGENT" ] && plutil -lint "$PATH_AGENT" >/dev/null 2>&1; then
+    report OK 'macOS login PATH helper is installed'
+else
+    fail 'macOS login PATH helper is missing; rerun install.sh'
+fi
+
+gui_path="$(launchctl getenv PATH 2>/dev/null || true)"
+case ":${gui_path}:" in
+    *":${BIN_DIR}:"*) report OK 'Codex Desktop GUI PATH includes the SSH wrapper' ;;
+    *) fail 'Codex Desktop GUI PATH does not include ~/.local/bin; rerun install.sh' ;;
 esac
 
 if [ -z "$HOST_ALIAS" ] && [ -f "${CONFIG_DIR}/hosts.txt" ]; then
@@ -122,6 +135,14 @@ if printf '%s' "$codex_probe" | grep -q 'codex'; then
     report OK "Remote $(printf '%s\n' "$codex_probe" | tail -n 1)"
 else
     fail 'Remote Codex was not found in VS Code/Cursor or ~/.local/bin'
+fi
+
+history_probe="$($WRAPPER "$HOST_ALIAS" 'test -x "$HOME/.local/bin/codex-jumpbridge-history-sync" && "$HOME/.local/bin/codex-jumpbridge-history-sync" status && "$HOME/.local/bin/codex-jumpbridge-history-sync" preflight' 2>/dev/null || true)"
+if printf '%s' "$history_probe" | grep -q 'CODEX_JUMPBRIDGE_HISTORY_SYNC=1\.4\.0' &&
+    printf '%s' "$history_probe" | grep -q 'CODEX_JUMPBRIDGE_HISTORY_PREFLIGHT=READY'; then
+    report OK 'Remote per-Host history isolation is ready'
+else
+    fail 'Remote history isolation helper is missing; rerun install.sh'
 fi
 
 proxy_url="$(read_proxy "$HOST_ALIAS" 2>/dev/null || true)"

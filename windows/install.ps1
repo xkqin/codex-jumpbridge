@@ -7,6 +7,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $remotePrepareSource = Join-Path (Split-Path $PSScriptRoot -Parent) 'shared\remote-prepare.sh'
+$historySyncSource = Join-Path (Split-Path $PSScriptRoot -Parent) 'shared\history-sync.py'
 
 trap {
     $message = $_.Exception.Message -replace '[\r\n]+', ' '
@@ -54,6 +55,54 @@ Update openai.chatgpt in the VS Code/Cursor SSH window, then run install.ps1 aga
         Write-Step 'WARN' "Gateway returned $wrapperExitCode after reporting READY on $Alias; continuing"
     }
     Write-Step 'OK' "Remote home launcher and codex-code-mode-host are ready on $Alias"
+}
+
+function Install-RemoteHistorySync(
+    [string]$Wrapper,
+    [string]$Alias,
+    [string]$ScriptPath
+) {
+    $sourceBytes = [IO.File]::ReadAllBytes($ScriptPath)
+    $compressed = [IO.MemoryStream]::new()
+    $gzip = [IO.Compression.GZipStream]::new(
+        $compressed,
+        [IO.Compression.CompressionMode]::Compress,
+        $true)
+    try {
+        $gzip.Write($sourceBytes, 0, $sourceBytes.Length)
+    } finally {
+        $gzip.Dispose()
+    }
+    $encoded = [Convert]::ToBase64String($compressed.ToArray())
+    $compressed.Dispose()
+    $remoteCommand =
+        'umask 077; mkdir -p "$HOME/.local/bin"; ' +
+        '__codex_jb_target="$HOME/.local/bin/codex-jumpbridge-history-sync"; ' +
+        '__codex_jb_temp="$HOME/.local/bin/.history-sync.$$"; ' +
+        '__codex_jb_backup="$HOME/.local/bin/.history-sync.backup.$$"; ' +
+        '__codex_jb_had_old=0; ' +
+        'trap ''rm -f "$__codex_jb_temp" "$__codex_jb_backup"'' EXIT; ' +
+        ('printf %s ' + $encoded + ' | base64 -d | gzip -d >"$__codex_jb_temp"; ') +
+        'chmod 700 "$__codex_jb_temp"; ' +
+        'python3 "$__codex_jb_temp" --version || exit 1; ' +
+        'python3 "$__codex_jb_temp" preflight || exit 1; ' +
+        '"$__codex_jb_temp" --version || exit 1; ' +
+        'if [ -e "$__codex_jb_target" ]; then ' +
+        'cp -p "$__codex_jb_target" "$__codex_jb_backup" || exit 1; ' +
+        '__codex_jb_had_old=1; fi; ' +
+        'mv -f "$__codex_jb_temp" "$__codex_jb_target" || exit 1; ' +
+        'if ! "$__codex_jb_target" --version; then ' +
+        'if [ "$__codex_jb_had_old" -eq 1 ]; then ' +
+        'mv -f "$__codex_jb_backup" "$__codex_jb_target"; ' +
+        'else rm -f "$__codex_jb_target"; fi; exit 1; fi; ' +
+        'rm -f "$__codex_jb_backup"'
+    $output = & $Wrapper $Alias $remoteCommand 2>&1
+    if ($LASTEXITCODE -ne 0 -or
+        ($output | Out-String) -notmatch 'codex-jumpbridge-history-sync 1\.4\.0' -or
+        ($output | Out-String) -notmatch 'CODEX_JUMPBRIDGE_HISTORY_PREFLIGHT=READY') {
+        throw "Remote history isolation helper installation failed for $Alias."
+    }
+    Write-Step 'OK' "Remote history isolation helper is ready on $Alias"
 }
 
 function Get-SshAliases([string]$Path) {
@@ -183,8 +232,9 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'setup.ps1') -Destination (
     Join-Path $binDir 'codex-jumpbridge-setup.ps1') -Force
 Copy-Item -LiteralPath $remotePrepareSource -Destination (
     Join-Path $binDir 'codex-jumpbridge-remote-prepare.sh') -Force
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'repair-thread-assignments.ps1') -Destination (
-    Join-Path $binDir 'codex-jumpbridge-repair-thread-assignments.ps1') -Force
+$legacyThreadRepairPath = Join-Path $binDir 'codex-jumpbridge-repair-thread-assignments.ps1'
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'repair-thread-assignments.ps1') `
+    -Destination $legacyThreadRepairPath -Force
 
 foreach ($taskName in @(
     'CodexJumpBridge-ThreadAssignmentRepair',
@@ -286,6 +336,7 @@ if (-not $ProxyUrl -and -not $SkipSetup) {
 $remotePreparePath = $remotePrepareSource
 foreach ($alias in $HostAlias) {
     Invoke-RemotePrepare -Wrapper $targetSsh -Alias $alias -ScriptPath $remotePreparePath
+    Install-RemoteHistorySync -Wrapper $targetSsh -Alias $alias -ScriptPath $historySyncSource
 }
 
 if (-not $SkipDoctor) {
