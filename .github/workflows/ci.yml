@@ -70,7 +70,7 @@ jobs:
                   return 0;
               }
           }
-'@ | Set-Content -LiteralPath $fakeSource -Encoding UTF8
+          '@ | Set-Content -LiteralPath $fakeSource -Encoding UTF8
           $fakeSsh = Join-Path $work 'fake-ssh.exe'
           & 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe' /nologo /target:exe "/out:$fakeSsh" $fakeSource
           if ($LASTEXITCODE -ne 0) { throw 'Could not build fake SSH test helper' }
