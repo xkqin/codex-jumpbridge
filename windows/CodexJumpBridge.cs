@@ -12,11 +12,6 @@ internal static class CodexJumpBridge
     private static readonly List<string> TClusterHostOrder =
         LoadJumpBridgeHostOrder();
 
-    private static readonly HashSet<string> TClusterAliases =
-        new HashSet<string>(
-            TClusterHostOrder,
-            StringComparer.OrdinalIgnoreCase);
-
     private static readonly HashSet<string> RemoteMcpAliases =
         LoadRemoteMcpHosts();
 
@@ -39,7 +34,10 @@ internal static class CodexJumpBridge
         }
 
         int hostIndex = FindHostIndex(args);
-        bool isTCluster = hostIndex >= 0 && TClusterAliases.Contains(args[hostIndex]);
+        string configuredHostAlias = hostIndex >= 0
+            ? FindConfiguredHostAlias(args[hostIndex])
+            : null;
+        bool isTCluster = configuredHostAlias != null;
         bool hasRemoteCommand = hostIndex >= 0 && hostIndex + 1 < args.Length;
 
         if (!isTCluster || !hasRemoteCommand || IsPlainShCommand(args, hostIndex))
@@ -50,9 +48,12 @@ internal static class CodexJumpBridge
         string remoteCommand = JoinRemoteCommand(args, hostIndex + 1);
         string[] sshArgs = new string[hostIndex + 2];
         Array.Copy(args, sshArgs, hostIndex + 1);
+        // Codex Desktop canonicalizes discovered aliases to lowercase. OpenSSH
+        // Host matching can be case-sensitive, so preserve config spelling.
+        sshArgs[hostIndex] = configuredHostAlias;
         sshArgs[hostIndex + 1] = "sh";
 
-        return RunThroughLoginShell(sshArgs, remoteCommand, args[hostIndex]);
+        return RunThroughLoginShell(sshArgs, remoteCommand, configuredHostAlias);
     }
 
     private static string ResolveRealSsh()
@@ -89,6 +90,27 @@ internal static class CodexJumpBridge
                 "codex-jumpbridge-hosts.txt"));
 
         return hosts;
+    }
+
+    private static string FindConfiguredHostAlias(string target)
+    {
+        if (String.IsNullOrWhiteSpace(target))
+        {
+            return null;
+        }
+
+        foreach (string configuredHost in TClusterHostOrder)
+        {
+            if (String.Equals(
+                configuredHost,
+                target,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                return configuredHost;
+            }
+        }
+
+        return null;
     }
 
     private static void AddHostsFromFile(

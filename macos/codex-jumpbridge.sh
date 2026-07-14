@@ -35,24 +35,38 @@ option_takes_value() {
     esac
 }
 
-is_configured_host() {
+canonical_configured_host() {
     local target="$1"
-    local file
+    local target_lower candidate candidate_lower file
+    target_lower="$(printf '%s' "$target" | tr '[:upper:]' '[:lower:]')"
 
-    if [ -n "${CODEX_JUMPBRIDGE_HOSTS:-}" ] &&
-        printf '%s' "$CODEX_JUMPBRIDGE_HOSTS" |
-            tr ',;' '\n\n' |
-            sed 's/^[[:space:]]*//;s/[[:space:]]*$//' |
-            grep -Fqx -- "$target"; then
-        return 0
+    if [ -n "${CODEX_JUMPBRIDGE_HOSTS:-}" ]; then
+        while IFS= read -r candidate; do
+            candidate="$(printf '%s' "$candidate" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            [ -n "$candidate" ] || continue
+            candidate_lower="$(printf '%s' "$candidate" | tr '[:upper:]' '[:lower:]')"
+            if [ "$candidate_lower" = "$target_lower" ]; then
+                printf '%s' "$candidate"
+                return 0
+            fi
+        done < <(printf '%s' "$CODEX_JUMPBRIDGE_HOSTS" | tr ',;' '\n\n')
     fi
 
     for file in \
         "$HOSTS_FILE" \
         "$(cd "$(dirname "$0")" 2>/dev/null && pwd)/codex-jumpbridge-hosts.txt"; do
-        if [ -f "$file" ] && grep -Fqx -- "$target" "$file"; then
-            return 0
-        fi
+        [ -f "$file" ] || continue
+        while IFS= read -r candidate || [ -n "$candidate" ]; do
+            candidate="$(printf '%s' "$candidate" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            case "$candidate" in
+                ''|'#'*) continue ;;
+            esac
+            candidate_lower="$(printf '%s' "$candidate" | tr '[:upper:]' '[:lower:]')"
+            if [ "$candidate_lower" = "$target_lower" ]; then
+                printf '%s' "$candidate"
+                return 0
+            fi
+        done < "$file"
     done
 
     return 1
@@ -218,12 +232,13 @@ if [ "$host_index" -lt 0 ]; then
     exec "$REAL_SSH" "$@"
 fi
 
-host_alias="${args[$host_index]}"
+host_alias="$(canonical_configured_host "${args[$host_index]}" || true)"
 command_index=$((host_index + 1))
-if ! is_configured_host "$host_alias" ||
-    [ "$command_index" -ge "${#args[@]}" ]; then
+if [ -z "$host_alias" ] || [ "$command_index" -ge "${#args[@]}" ]; then
     exec "$REAL_SSH" "$@"
 fi
+
+args[$host_index]="$host_alias"
 
 if [ "${#args[@]}" -eq $((host_index + 2)) ] &&
     [ "${args[$command_index]}" = 'sh' ]; then

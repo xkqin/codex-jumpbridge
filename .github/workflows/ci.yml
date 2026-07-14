@@ -37,6 +37,77 @@ jobs:
           if ($version -ne 'codex-jumpbridge 1.4.0') {
             throw "Unexpected version: $version"
           }
+      - name: Preserve configured SSH alias spelling
+        shell: powershell
+        run: |
+          $work = Join-Path $env:RUNNER_TEMP 'codex-jumpbridge-alias-case'
+          New-Item -ItemType Directory -Force -Path $work | Out-Null
+          $fakeSource = Join-Path $work 'FakeSsh.cs'
+          @'
+          using System;
+          using System.IO;
+          using System.Text.RegularExpressions;
+
+          internal static class FakeSsh
+          {
+              public static int Main(string[] args)
+              {
+                  if (args.Length != 2 || args[0] != "jump-T208-Ci" || args[1] != "sh")
+                  {
+                      return 94;
+                  }
+                  string bootstrap = Console.In.ReadLine();
+                  Match marker = Regex.Match(
+                      bootstrap ?? "",
+                      "__CODEX_T_SSH_START_[0-9a-f]+",
+                      RegexOptions.IgnoreCase);
+                  if (!marker.Success)
+                  {
+                      return 93;
+                  }
+                  Console.WriteLine(marker.Value);
+                  Console.OpenStandardOutput().Write(new byte[] { 0x81, 0x03, 0x61, 0x62, 0x63 }, 0, 5);
+                  return 0;
+              }
+          }
+'@ | Set-Content -LiteralPath $fakeSource -Encoding UTF8
+          $fakeSsh = Join-Path $work 'fake-ssh.exe'
+          & 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe' /nologo /target:exe "/out:$fakeSsh" $fakeSource
+          if ($LASTEXITCODE -ne 0) { throw 'Could not build fake SSH test helper' }
+
+          $hostsDir = Join-Path $HOME '.codex-jumpbridge'
+          $hostsPath = Join-Path $hostsDir 'hosts.txt'
+          $hostsBackup = Join-Path $work 'hosts.txt.backup'
+          $hadHosts = Test-Path -LiteralPath $hostsPath
+          if ($hadHosts) { Copy-Item -LiteralPath $hostsPath -Destination $hostsBackup }
+          $oldRealSsh = $env:CODEX_JUMPBRIDGE_REAL_SSH
+          try {
+            New-Item -ItemType Directory -Force -Path $hostsDir | Out-Null
+            [IO.File]::WriteAllLines($hostsPath, [string[]]@('jump-T208-Ci'), [Text.UTF8Encoding]::new($false))
+            $env:CODEX_JUMPBRIDGE_REAL_SSH = $fakeSsh
+            $emptyInput = Join-Path $work 'empty-input'
+            New-Item -ItemType File -Force -Path $emptyInput | Out-Null
+            $actual = Join-Path $work 'actual.bin'
+            $stderr = Join-Path $work 'stderr.txt'
+            $process = Start-Process -FilePath (Resolve-Path '.\windows\codex-jumpbridge.exe') `
+              -ArgumentList @('jump-t208-ci', 'codex app-server proxy') `
+              -RedirectStandardInput $emptyInput -RedirectStandardOutput $actual `
+              -RedirectStandardError $stderr -NoNewWindow -Wait -PassThru
+            if ($process.ExitCode -ne 0) {
+              throw "Wrapper exited $($process.ExitCode): $(Get-Content -Raw $stderr)"
+            }
+            $actualBytes = [IO.File]::ReadAllBytes($actual)
+            $expectedBytes = [byte[]](0x81, 0x03, 0x61, 0x62, 0x63)
+            if ($actualBytes.Length -ne $expectedBytes.Length -or
+                -not [Linq.Enumerable]::SequenceEqual($actualBytes, $expectedBytes)) {
+              throw 'Wrapper did not preserve the raw proxy stream'
+            }
+          } finally {
+            $env:CODEX_JUMPBRIDGE_REAL_SSH = $oldRealSsh
+            if ($hadHosts) { Copy-Item -LiteralPath $hostsBackup -Destination $hostsPath -Force }
+            else { Remove-Item -LiteralPath $hostsPath -Force -ErrorAction SilentlyContinue }
+            Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+          }
       - name: Build Windows installer
         shell: powershell
         run: .\windows\build-release.ps1 -OutputDirectory dist
@@ -65,6 +136,8 @@ jobs:
           trap 'rm -rf "$work"' EXIT
           cat > "$work/fake-ssh" <<'EOF'
           #!/bin/bash
+          test "$1" = 'Fixture'
+          test "$2" = 'sh'
           IFS= read -r bootstrap
           case "$bootstrap" in
             *'__SECURE_RUN__'*|*'>codex app-server proxy2'*|*'codex app-server proxycodex'*)
@@ -82,14 +155,14 @@ jobs:
           EOF
           chmod 755 "$work/fake-ssh"
           printf '\201\003abc' > "$work/expected"
-          CODEX_JUMPBRIDGE_HOSTS=fixture \
+          CODEX_JUMPBRIDGE_HOSTS=Fixture \
             CODEX_JUMPBRIDGE_REAL_SSH="$work/fake-ssh" \
             /bin/bash macos/codex-jumpbridge.sh \
             fixture 'codex app-server proxy' </dev/null > "$work/actual"
           cmp "$work/expected" "$work/actual"
 
           set +e
-          CODEX_JUMPBRIDGE_HOSTS=fixture \
+          CODEX_JUMPBRIDGE_HOSTS=Fixture \
             CODEX_JUMPBRIDGE_REAL_SSH="$work/fake-ssh" \
             FAKE_SSH_EXIT=87 \
             /bin/bash macos/codex-jumpbridge.sh \
