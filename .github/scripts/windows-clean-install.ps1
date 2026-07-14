@@ -140,7 +140,7 @@ internal static class FakeSsh
         throw "Installed Windows wrapper did not reach the SSH fixture. output=$remoteProbe log=$logText"
     }
     $version = (& $installed --codex-jumpbridge-version | Out-String).Trim()
-    if ($version -ne 'codex-jumpbridge 1.4.3') {
+    if ($version -ne 'codex-jumpbridge 1.4.4') {
         throw "Unexpected clean-install version: $version"
     }
     $hosts = @(Get-Content -LiteralPath (Join-Path $fakeHome '.codex-jumpbridge\hosts.txt'))
