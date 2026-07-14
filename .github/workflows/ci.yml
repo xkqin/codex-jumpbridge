@@ -46,7 +46,6 @@ jobs:
           @'
           using System;
           using System.IO;
-          using System.Text.RegularExpressions;
 
           internal static class FakeSsh
           {
@@ -57,16 +56,32 @@ jobs:
                       return 94;
                   }
                   string bootstrap = Console.In.ReadLine();
-                  Match marker = Regex.Match(
-                      bootstrap ?? "",
-                      "__CODEX_T_SSH_START_[0-9a-f]+",
-                      RegexOptions.IgnoreCase);
-                  if (!marker.Success)
+                  const string markerPrefix = "__CODEX_T_SSH_START_";
+                  int markerStart = (bootstrap ?? "").IndexOf(
+                      markerPrefix,
+                      StringComparison.OrdinalIgnoreCase);
+                  int markerEnd = markerStart < 0
+                      ? -1
+                      : bootstrap.IndexOf("; cd", markerStart, StringComparison.Ordinal);
+                  if (markerStart < 0 || markerEnd < 0)
                   {
                       return 93;
                   }
+                  System.Text.StringBuilder marker = new System.Text.StringBuilder(markerPrefix);
+                  for (int i = markerStart + markerPrefix.Length; i < markerEnd; i++)
+                  {
+                      char value = Char.ToLowerInvariant(bootstrap[i]);
+                      if ((value >= '0' && value <= '9') || (value >= 'a' && value <= 'f'))
+                      {
+                          marker.Append(value);
+                      }
+                  }
+                  if (marker.Length == markerPrefix.Length)
+                  {
+                      return 92;
+                  }
                   Stream output = Console.OpenStandardOutput();
-                  byte[] markerBytes = System.Text.Encoding.ASCII.GetBytes(marker.Value + "\n");
+                  byte[] markerBytes = System.Text.Encoding.ASCII.GetBytes(marker + "\n");
                   output.Write(markerBytes, 0, markerBytes.Length);
                   output.Write(new byte[] { 0x81, 0x03, 0x61, 0x62, 0x63 }, 0, 5);
                   output.Flush();
