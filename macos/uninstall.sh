@@ -6,6 +6,7 @@ BIN_DIR="${HOME}/.local/bin"
 CONFIG_DIR="${HOME}/.codex-jumpbridge"
 WRAPPER="${BIN_DIR}/ssh"
 BACKUP_DIR="${CONFIG_DIR}/backup"
+PATH_AGENT="${HOME}/Library/LaunchAgents/com.xkqin.codex-jumpbridge-path.plist"
 
 if [ -x "$WRAPPER" ]; then
     version="$($WRAPPER --codex-jumpbridge-version 2>/dev/null || true)"
@@ -53,5 +54,13 @@ remove_path_block() {
 
 remove_path_block "${HOME}/.zprofile"
 remove_path_block "${HOME}/.zshrc"
+
+if [ -f "$PATH_AGENT" ]; then
+    if command -v launchctl >/dev/null 2>&1; then
+        launchctl bootout "gui/$(id -u)" "$PATH_AGENT" >/dev/null 2>&1 || true
+    fi
+    rm -f "$PATH_AGENT"
+    printf '[OK] Removed the macOS login PATH helper\n'
+fi
 
 printf '[OK] SSH config, keys, remote files, and Codex history were not changed.\n'

@@ -8,6 +8,8 @@ HISTORY_SYNC_SOURCE="${SCRIPT_DIR}/../shared/history-sync.py"
 CONFIG_DIR="${HOME}/.codex-jumpbridge"
 BIN_DIR="${HOME}/.local/bin"
 BACKUP_DIR="${CONFIG_DIR}/backup"
+LAUNCH_AGENT_DIR="${HOME}/Library/LaunchAgents"
+PATH_AGENT="${LAUNCH_AGENT_DIR}/com.xkqin.codex-jumpbridge-path.plist"
 SSH_CONFIG="${HOME}/.ssh/config"
 PROXY_URL=''
 SKIP_DOCTOR=0
@@ -249,8 +251,61 @@ case ":${PATH}:" in
     *":${BIN_DIR}:"*) ;;
     *) export PATH="${BIN_DIR}:${PATH}" ;;
 esac
+
+install_gui_path_agent() {
+    local gui_path escaped_path temp domain
+    gui_path="${BIN_DIR}:${PATH}"
+    case ":${PATH}:" in
+        *":${BIN_DIR}:"*) gui_path="$PATH" ;;
+    esac
+    escaped_path="$(printf '%s' "$gui_path" |
+        sed 's/&/\&amp;/g;s/</\&lt;/g;s/>/\&gt;/g')"
+    mkdir -p "$LAUNCH_AGENT_DIR" || return 1
+    temp="$(mktemp "${LAUNCH_AGENT_DIR}/codex-jumpbridge-path.XXXXXX")" || return 1
+    cat > "$temp" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.xkqin.codex-jumpbridge-path</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/launchctl</string>
+        <string>setenv</string>
+        <string>PATH</string>
+        <string>${escaped_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+</dict>
+</plist>
+EOF
+    if ! /usr/bin/plutil -lint "$temp" >/dev/null; then
+        rm -f "$temp"
+        step FAIL 'Generated an invalid macOS login PATH helper'
+        return 1
+    fi
+    chmod 644 "$temp" || return 1
+    mv "$temp" "$PATH_AGENT" || return 1
+
+    domain="gui/$(id -u)"
+    launchctl bootout "$domain" "$PATH_AGENT" >/dev/null 2>&1 || true
+    if ! launchctl bootstrap "$domain" "$PATH_AGENT" >/dev/null 2>&1; then
+        step FAIL 'Could not register the macOS login PATH helper'
+        return 1
+    fi
+    if ! launchctl setenv PATH "$gui_path" >/dev/null 2>&1; then
+        step FAIL 'Could not update the current macOS GUI PATH'
+        return 1
+    fi
+    step OK 'Installed the macOS login PATH helper for Codex Desktop'
+}
+
 if command -v launchctl >/dev/null 2>&1; then
-    launchctl setenv PATH "$PATH" >/dev/null 2>&1 || true
+    install_gui_path_agent || exit 1
 fi
 
 if [ -z "$PROXY_URL" ] && [ "$SKIP_SETUP" -eq 0 ]; then

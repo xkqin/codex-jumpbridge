@@ -22,7 +22,8 @@
 - 发布包不包含 Host、IP、代理地址、用户名或私钥。
 
 > [!WARNING]
-> Windows 和 macOS 安装包暂未进行商业代码签名。若内部杀毒软件、SmartScreen 或
+> Windows 安装包暂未签名；macOS App 仅进行 ad-hoc 签名，未进行 Apple Developer ID
+> 公证。若内部杀毒软件、SmartScreen 或
 > Gatekeeper 拦截，请在核对 SHA256 后仅允许 JumpBridge 安装程序/App 和安装后的
 > SSH wrapper；不要关闭杀毒软件或放行整个目录。
 

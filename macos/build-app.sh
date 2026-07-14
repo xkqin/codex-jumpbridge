@@ -81,6 +81,8 @@ cat >"${CONTENTS_DIR}/Info.plist" <<EOF
 EOF
 
 plutil -lint "${CONTENTS_DIR}/Info.plist"
+/usr/bin/codesign --force --deep --sign - --timestamp=none "$APP_DIR"
+/usr/bin/codesign --verify --deep --strict "$APP_DIR"
 
 ZIP_OUTPUT="${OUTPUT_DIR}/Codex-JumpBridge-macOS-v${VERSION}.app.zip"
 DMG_OUTPUT="${OUTPUT_DIR}/Codex-JumpBridge-macOS-v${VERSION}.dmg"

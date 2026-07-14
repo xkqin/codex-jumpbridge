@@ -108,7 +108,7 @@ Status: READY
 - **macOS 11+：**下载 `Codex-JumpBridge-macOS-v1.4.0.dmg`，将 App 拖入“应用程序”后运行。
 
 > [!WARNING]
-> **内部使用版本暂未进行商业代码签名。** 请只从本仓库 Release 下载，并先核对
+> **内部使用版本仅进行 ad-hoc 签名，未进行 Apple Developer ID 公证。** 请只从本仓库 Release 下载，并先核对
 > 同一 Release 中的 `SHA256SUMS.txt`。若公司杀毒软件、Windows SmartScreen 或
 > macOS Gatekeeper 拦截，请仅允许本次下载的 JumpBridge 安装程序/App 及安装后的
 > JumpBridge SSH wrapper。不要关闭杀毒软件，也不要放行整个下载目录或
@@ -204,7 +204,8 @@ chmod +x macos/install.sh
 
 - 不读取、复制或上传 private key，也不修改 `~/.ssh/config`。
 - 代理保存在本机并同步给识别出的 T 集群 Host，不接受 URL 内嵌用户名或密码。
-- 不安装后台常驻服务；远端同步助手只随 SSH app-server 运行，不复制本机 Codex 历史。
+- 不安装后台常驻服务；macOS 仅安装一个登录时执行一次的 LaunchAgent，使 Codex Desktop
+  重启或重新登录后仍能找到 SSH wrapper。远端同步助手只随 SSH app-server 运行，不复制本机 Codex 历史。
 - 不自动下载未知远端二进制；缺少编辑器运行包时明确引导用户安装。
 - 安装前备份目标 SSH wrapper；Windows 用 `windows/uninstall.ps1`，macOS 用 `macos/uninstall.sh` 恢复。
 

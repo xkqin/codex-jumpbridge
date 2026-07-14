@@ -51,6 +51,53 @@ jobs:
             macos/setup-macos.sh macos/doctor-macos.sh \
             macos/repair-thread-assignments.sh macos/uninstall.sh \
             shared/remote-prepare.sh
+      - name: Exercise wrapper with the macOS system Bash
+        run: |
+          set -eu
+          if grep -En '\$\{[^}]*,,|\$\{[^}]*\^\^' macos/*.sh; then
+            echo 'Bash 4 case conversion is not supported by macOS /bin/bash.' >&2
+            exit 1
+          fi
+          test "$(/bin/bash macos/codex-jumpbridge.sh --codex-jumpbridge-version)" = \
+            'codex-jumpbridge 1.4.0'
+
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          cat > "$work/fake-ssh" <<'EOF'
+          #!/bin/bash
+          IFS= read -r bootstrap
+          case "$bootstrap" in
+            *'__SECURE_RUN__'*|*'>codex app-server proxy2'*|*'codex app-server proxycodex'*)
+              exit 93
+              ;;
+          esac
+          start_only="${bootstrap%%; cd*}'"
+          marker="$(eval "$start_only")"
+          test -n "$marker"
+          printf 'gateway banner\r\n%s\r\n' "$marker"
+          if [ "${FAKE_SSH_EXIT:-0}" -eq 87 ]; then
+            exit 87
+          fi
+          printf '\201\003abc'
+          EOF
+          chmod 755 "$work/fake-ssh"
+          printf '\201\003abc' > "$work/expected"
+          CODEX_JUMPBRIDGE_HOSTS=fixture \
+            CODEX_JUMPBRIDGE_REAL_SSH="$work/fake-ssh" \
+            /bin/bash macos/codex-jumpbridge.sh \
+            fixture 'codex app-server proxy' </dev/null > "$work/actual"
+          cmp "$work/expected" "$work/actual"
+
+          set +e
+          CODEX_JUMPBRIDGE_HOSTS=fixture \
+            CODEX_JUMPBRIDGE_REAL_SSH="$work/fake-ssh" \
+            FAKE_SSH_EXIT=87 \
+            /bin/bash macos/codex-jumpbridge.sh \
+            fixture 'codex app-server proxy' </dev/null > "$work/busy"
+          rc=$?
+          set -e
+          test "$rc" -eq 87
+          test ! -s "$work/busy"
       - name: Check history isolation helper
         run: |
           python3 -m py_compile shared/history-sync.py
