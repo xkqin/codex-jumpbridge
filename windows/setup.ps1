@@ -14,7 +14,10 @@ $proxiesPath = Join-Path $configDir 'proxies.txt'
 $remoteMcpHostsPath = Join-Path $configDir 'remote-mcp-hosts.txt'
 $sshConfigPath = Join-Path $HOME '.ssh\config'
 $sshPath = Join-Path $HOME '.local\bin\ssh.exe'
-$realSshPath = Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe'
+$realSshPath = $env:CODEX_JUMPBRIDGE_REAL_SSH
+if ([string]::IsNullOrWhiteSpace($realSshPath)) {
+    $realSshPath = Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe'
+}
 
 function Get-SshAliases {
     $aliases = [Collections.Generic.List[string]]::new()

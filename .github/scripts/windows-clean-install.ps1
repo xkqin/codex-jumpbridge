@@ -42,10 +42,12 @@ internal static class FakeSsh
 {
     public static int Main(string[] args)
     {
-        if (args.Length == 2 && args[0] == "-G")
+        if (Array.IndexOf(args, "-G") >= 0)
         {
             Console.WriteLine("hostname 127.0.0.1");
             Console.WriteLine("user ci");
+            string home = Environment.GetEnvironmentVariable("HOME") ?? String.Empty;
+            Console.WriteLine("identityfile " + Path.Combine(home, ".ssh", "id_fixture"));
             return 0;
         }
         if (args.Length != 2 ||

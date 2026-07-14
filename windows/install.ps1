@@ -151,11 +151,14 @@ if (-not (Test-Path -LiteralPath $sshConfig)) {
 }
 Write-Step 'OK' "Found SSH config: $sshConfig"
 
-$realSsh = Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe'
-if (-not (Test-Path -LiteralPath $realSsh)) {
-    throw "Windows OpenSSH not found: $realSsh"
+$realSsh = $env:CODEX_JUMPBRIDGE_REAL_SSH
+if ([string]::IsNullOrWhiteSpace($realSsh)) {
+    $realSsh = Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe'
 }
-Write-Step 'OK' 'Found Windows OpenSSH'
+if (-not (Test-Path -LiteralPath $realSsh)) {
+    throw "SSH client not found: $realSsh"
+}
+Write-Step 'OK' "Found SSH client: $realSsh"
 
 $detected = @(Get-SshAliases $sshConfig | Where-Object {
     Test-TClusterAlias -Alias $_ -SshPath $realSsh -ConfigPath $sshConfig
