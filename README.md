@@ -41,6 +41,12 @@ Codex JumpBridge 是按需启动的 SSH 兼容层，不是后台服务。它把 
 请安装并启动 https://github.com/xkqin/codex-jumpbridge 。阅读 README 后自动判断 Windows/macOS，扫描 ~/.ssh/config，把符合 T 集群 alias 或多段 User 路由格式的全部 Host 一次配置完成。只检查 IdentityFile 是否存在，不读取私钥。提示我填写“集群计算节点访问 OpenAI 的专用代理”，不要使用或展示仓库内置地址；缺少远端运行文件时按 README 的 Q&A 引导安装 openai.chatgpt，不安装独立 CLI。最后逐个 Host 运行 doctor，全部 READY 才算完成。
 ```
 
+> [!NOTE]
+> 如果自动安装、测试连接或 doctor 失败，不必反复重装。把当前报错直接发给 Codex，
+> 让它结合本机日志和 doctor 结果做针对性排查，通常经过少量调试即可解决。每个人的
+> 本机网络、SSH 配置、专用代理和集群节点环境可能不同，具体处理步骤也可能略有差异。
+> 排查时不要粘贴私钥内容，也不要公开集群专用代理地址。
+
 Codex 会自动安装并打开平台原生设置页，然后按下面两步完成配置。
 
 **完整安装顺序**
@@ -105,8 +111,8 @@ Status: READY
 
 也可以打开 [GitHub Releases](https://github.com/xkqin/codex-jumpbridge/releases/latest)：
 
-- **Windows 10/11：**下载并双击 `Codex-JumpBridge-Windows-v1.4.3.exe`。
-- **macOS 11+：**下载 `Codex-JumpBridge-macOS-v1.4.3.dmg`，将 App 拖入“应用程序”后运行。
+- **Windows 10/11：**下载并双击 `Codex-JumpBridge-Windows-v1.4.4.exe`。
+- **macOS 11+：**下载 `Codex-JumpBridge-macOS-v1.4.4.dmg`，将 App 拖入“应用程序”后运行。
 
 > [!WARNING]
 > **内部使用版本仅进行 ad-hoc 签名，未进行 Apple Developer ID 公证。** 请只从本仓库 Release 下载，并先核对
@@ -242,7 +248,7 @@ app-server，不会删除或改写 `~/.codex/config.toml` 中的 MCP 配置。
 
 `v1.4.2+` 不使用历史互斥锁，多个 Host 可以同时连接。若升级后仍看到退出码 87 或
 “SSH 连接失败”，请完全退出并重新打开 Codex Desktop，确认 `ssh --codex-jumpbridge-version`
-显示 `1.4.3`，再逐个运行 doctor 检查 SSH、远端运行文件和代理。
+显示 `1.4.4`，再逐个运行 doctor 检查 SSH、远端运行文件和代理。
 
 ### Q：提示缺少 SSH 私钥怎么办？
 
