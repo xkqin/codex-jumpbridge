@@ -188,12 +188,17 @@ the matching public key. Never copy a colleague's private key or commit it to Gi
 Write-Step 'OK' 'Local SSH private key is available for every T-cluster Host'
 
 $bundledWrapper = Join-Path $PSScriptRoot 'codex-jumpbridge.exe'
+$wrapperSource = Join-Path $PSScriptRoot 'CodexJumpBridge.cs'
 $bundledVersion = if (Test-Path -LiteralPath $bundledWrapper) {
     & $bundledWrapper --codex-jumpbridge-version 2>$null
 } else {
     ''
 }
-if ($bundledVersion -ne 'codex-jumpbridge 1.4.0') {
+$sourceIsNewer = (Test-Path -LiteralPath $bundledWrapper) -and
+    (Test-Path -LiteralPath $wrapperSource) -and
+    ((Get-Item -LiteralPath $wrapperSource).LastWriteTimeUtc -gt
+     (Get-Item -LiteralPath $bundledWrapper).LastWriteTimeUtc)
+if ($bundledVersion -ne 'codex-jumpbridge 1.4.0' -or $sourceIsNewer) {
     & (Join-Path $PSScriptRoot 'build.ps1') | Out-Null
     Write-Step 'OK' 'Built Codex JumpBridge'
 } else {
@@ -212,7 +217,13 @@ $installedVersion = if (Test-Path -LiteralPath $targetSsh) {
 } else {
     ''
 }
-if ($installedVersion -eq $expectedVersion) {
+$bundledHash = (Get-FileHash -LiteralPath $bundledWrapper -Algorithm SHA256).Hash
+$installedHash = if (Test-Path -LiteralPath $targetSsh) {
+    (Get-FileHash -LiteralPath $targetSsh -Algorithm SHA256).Hash
+} else {
+    ''
+}
+if ($installedVersion -eq $expectedVersion -and $installedHash -eq $bundledHash) {
     Write-Step 'OK' 'Existing JumpBridge runtime is already current; keeping the active ssh.exe'
 } else {
     if (Test-Path -LiteralPath $targetSsh) {
