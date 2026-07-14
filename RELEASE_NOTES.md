@@ -1,3 +1,16 @@
+## Codex JumpBridge 1.4.2
+
+本版本移除运行时共享历史锁，让多个计算节点按 VS Code/Cursor Codex 插件的方式直接使用
+远端原生 `~/.codex`：
+
+- 208/209/210 等多个 SSH Host 可以同时连接，不再因其他 Host 在线返回退出码 87。
+- 每个 Host 继续使用节点本地 app-server socket，同时保留登录 Shell、启动门、WebSocket、代理和进程清理修复。
+- Windows/macOS 安装器不再上传或启动共享历史 helper，doctor 会明确验证原生 `~/.codex`。
+- 从 `v1.4.1` 升级时，只补回旧专用 master 中缺失的 session 和索引记录，不覆盖或删除原有历史。
+
+- **Windows 10/11：**运行 `Codex-JumpBridge-Windows-v1.4.2.exe`。
+- **macOS 11+：**打开 `Codex-JumpBridge-macOS-v1.4.2.dmg`，将 App 拖入“应用程序”后运行。
+
 ## Codex JumpBridge 1.4.1
 
 本版本修复新版 Codex Desktop 下的 SSH 连接与历史加载稳定性问题：

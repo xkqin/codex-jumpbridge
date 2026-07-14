@@ -4,7 +4,6 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REMOTE_PREPARE_SOURCE="${SCRIPT_DIR}/../shared/remote-prepare.sh"
-HISTORY_SYNC_SOURCE="${SCRIPT_DIR}/../shared/history-sync.py"
 CONFIG_DIR="${HOME}/.codex-jumpbridge"
 BIN_DIR="${HOME}/.local/bin"
 BACKUP_DIR="${CONFIG_DIR}/backup"
@@ -136,7 +135,6 @@ for required in \
     "$SCRIPT_DIR/setup-macos.sh" \
     "$SCRIPT_DIR/doctor-macos.sh" \
     "$REMOTE_PREPARE_SOURCE" \
-    "$HISTORY_SYNC_SOURCE" \
     "$SCRIPT_DIR/repair-thread-assignments.sh"; do
     if [ ! -f "$required" ]; then
         printf 'Required file missing: %s\n' "$required" >&2
@@ -160,17 +158,6 @@ valid_proxy_url() {
         ''|*@*) return 1 ;;
     esac
     return 0
-}
-
-make_host_token() {
-    local target hash i code
-    target="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
-    hash=2166136261
-    for ((i = 0; i < ${#target}; i++)); do
-        printf -v code '%d' "'${target:i:1}"
-        hash=$(( ((hash ^ code) * 16777619) & 0xffffffff ))
-    done
-    printf '%08x' "$hash"
 }
 
 if [ -n "$PROXY_URL" ] && ! valid_proxy_url "$PROXY_URL"; then
@@ -324,7 +311,6 @@ if [ -z "$PROXY_URL" ] && [ "$SKIP_SETUP" -eq 0 ]; then
 fi
 
 remote_encoded="$(base64 < "$REMOTE_PREPARE_SOURCE" | tr -d '\r\n')"
-history_encoded="$(gzip -c "$HISTORY_SYNC_SOURCE" | base64 | tr -d '\r\n')"
 for alias in "${HOSTS[@]}"; do
     remote_output="$($TARGET_SSH "$alias" "printf %s $remote_encoded | base64 -d | bash" 2>&1)"
     remote_rc=$?
@@ -350,28 +336,6 @@ EOF
         step WARN "Gateway returned ${remote_rc} after reporting READY on ${alias}; continuing"
     fi
     step OK "Remote home launcher and codex-code-mode-host are ready on $alias"
-
-    history_command='umask 077; mkdir -p "$HOME/.local/bin"; __codex_jb_target="$HOME/.local/bin/codex-jumpbridge-history-sync"; __codex_jb_temp="$HOME/.local/bin/.history-sync.$$"; __codex_jb_backup="$HOME/.local/bin/.history-sync.backup.$$"; __codex_jb_had_old=0; trap '"'"'rm -f "$__codex_jb_temp" "$__codex_jb_backup"'"'"' EXIT; printf %s '"$history_encoded"' | base64 -d | gzip -d >"$__codex_jb_temp"; chmod 700 "$__codex_jb_temp"; python3 "$__codex_jb_temp" --version || exit 1; python3 "$__codex_jb_temp" preflight || exit 1; "$__codex_jb_temp" --version || exit 1; if [ -e "$__codex_jb_target" ]; then cp -p "$__codex_jb_target" "$__codex_jb_backup" || exit 1; __codex_jb_had_old=1; fi; mv -f "$__codex_jb_temp" "$__codex_jb_target" || exit 1; if ! "$__codex_jb_target" --version; then if [ "$__codex_jb_had_old" -eq 1 ]; then mv -f "$__codex_jb_backup" "$__codex_jb_target"; else rm -f "$__codex_jb_target"; fi; exit 1; fi; rm -f "$__codex_jb_backup"'
-    history_output="$($TARGET_SSH "$alias" "$history_command" 2>&1)"
-    history_rc=$?
-    if [ "$history_rc" -ne 0 ] ||
-        ! printf '%s' "$history_output" | grep -q 'codex-jumpbridge-history-sync 1\.4\.1' ||
-        ! printf '%s' "$history_output" | grep -q 'CODEX_JUMPBRIDGE_HISTORY_PREFLIGHT=READY'; then
-        printf 'Remote shared history helper installation failed on %s.\n' "$alias" >&2
-        exit 1
-    fi
-    step OK "Remote shared history helper is ready on $alias"
-
-    host_token="$(make_host_token "$alias")"
-    history_prepare_command='"$HOME/.local/bin/codex-jumpbridge-history-sync" prepare '"$host_token"
-    history_prepare_output="$($TARGET_SSH "$alias" "$history_prepare_command" 2>&1)"
-    history_prepare_rc=$?
-    if [ "$history_prepare_rc" -ne 0 ] ||
-        ! printf '%s' "$history_prepare_output" | grep -q 'CODEX_JUMPBRIDGE_HISTORY_PREPARE=READY'; then
-        printf 'Remote history preparation failed on %s. Disconnect active Codex SSH Hosts and run ./install.sh again.\n' "$alias" >&2
-        exit 1
-    fi
-    step OK "Remote history is prepared for $alias"
 done
 
 if [ "$SKIP_DOCTOR" -eq 0 ]; then

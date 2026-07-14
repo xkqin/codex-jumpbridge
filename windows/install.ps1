@@ -7,7 +7,6 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $remotePrepareSource = Join-Path (Split-Path $PSScriptRoot -Parent) 'shared\remote-prepare.sh'
-$historySyncSource = Join-Path (Split-Path $PSScriptRoot -Parent) 'shared\history-sync.py'
 
 trap {
     $message = $_.Exception.Message -replace '[\r\n]+', ' '
@@ -54,14 +53,6 @@ namespace CodexJumpBridge {
         [ref]$result)
 }
 
-function Get-HostToken([string]$Alias) {
-    [uint32]$hash = 2166136261
-    foreach ($value in [Text.Encoding]::UTF8.GetBytes($Alias.ToLowerInvariant())) {
-        $hash = [uint32]((([uint64]($hash -bxor $value)) * 16777619) -band 4294967295)
-    }
-    return $hash.ToString('x8')
-}
-
 function Invoke-RemotePrepare(
     [string]$Wrapper,
     [string]$Alias,
@@ -98,64 +89,6 @@ Update openai.chatgpt in the VS Code/Cursor SSH window, then run install.ps1 aga
         Write-Step 'WARN' "Gateway returned $wrapperExitCode after reporting READY on $Alias; continuing"
     }
     Write-Step 'OK' "Remote home launcher and codex-code-mode-host are ready on $Alias"
-}
-
-function Install-RemoteHistorySync(
-    [string]$Wrapper,
-    [string]$Alias,
-    [string]$ScriptPath
-) {
-    $sourceBytes = [IO.File]::ReadAllBytes($ScriptPath)
-    $compressed = [IO.MemoryStream]::new()
-    $gzip = [IO.Compression.GZipStream]::new(
-        $compressed,
-        [IO.Compression.CompressionMode]::Compress,
-        $true)
-    try {
-        $gzip.Write($sourceBytes, 0, $sourceBytes.Length)
-    } finally {
-        $gzip.Dispose()
-    }
-    $encoded = [Convert]::ToBase64String($compressed.ToArray())
-    $compressed.Dispose()
-    $remoteCommand =
-        'umask 077; mkdir -p "$HOME/.local/bin"; ' +
-        '__codex_jb_target="$HOME/.local/bin/codex-jumpbridge-history-sync"; ' +
-        '__codex_jb_temp="$HOME/.local/bin/.history-sync.$$"; ' +
-        '__codex_jb_backup="$HOME/.local/bin/.history-sync.backup.$$"; ' +
-        '__codex_jb_had_old=0; ' +
-        'trap ''rm -f "$__codex_jb_temp" "$__codex_jb_backup"'' EXIT; ' +
-        ('printf %s ' + $encoded + ' | base64 -d | gzip -d >"$__codex_jb_temp"; ') +
-        'chmod 700 "$__codex_jb_temp"; ' +
-        'python3 "$__codex_jb_temp" --version || exit 1; ' +
-        'python3 "$__codex_jb_temp" preflight || exit 1; ' +
-        '"$__codex_jb_temp" --version || exit 1; ' +
-        'if [ -e "$__codex_jb_target" ]; then ' +
-        'cp -p "$__codex_jb_target" "$__codex_jb_backup" || exit 1; ' +
-        '__codex_jb_had_old=1; fi; ' +
-        'mv -f "$__codex_jb_temp" "$__codex_jb_target" || exit 1; ' +
-        'if ! "$__codex_jb_target" --version; then ' +
-        'if [ "$__codex_jb_had_old" -eq 1 ]; then ' +
-        'mv -f "$__codex_jb_backup" "$__codex_jb_target"; ' +
-        'else rm -f "$__codex_jb_target"; fi; exit 1; fi; ' +
-        'rm -f "$__codex_jb_backup"'
-    $output = & $Wrapper $Alias $remoteCommand 2>&1
-    if ($LASTEXITCODE -ne 0 -or
-        ($output | Out-String) -notmatch 'codex-jumpbridge-history-sync 1\.4\.1' -or
-        ($output | Out-String) -notmatch 'CODEX_JUMPBRIDGE_HISTORY_PREFLIGHT=READY') {
-        throw "Remote shared history helper installation failed for $Alias."
-    }
-    Write-Step 'OK' "Remote shared history helper is ready on $Alias"
-
-    $hostToken = Get-HostToken $Alias
-    $prepareOutput = & $Wrapper $Alias (
-        '"$HOME/.local/bin/codex-jumpbridge-history-sync" prepare ' + $hostToken
-    ) 2>&1
-    if ($LASTEXITCODE -ne 0 -or
-        ($prepareOutput | Out-String) -notmatch 'CODEX_JUMPBRIDGE_HISTORY_PREPARE=READY') {
-        throw "Remote history preparation failed for $Alias. Disconnect active Codex SSH Hosts and run install.ps1 again."
-    }
-    Write-Step 'OK' "Remote history is prepared for $Alias"
 }
 
 function Get-SshAliases([string]$Path) {
@@ -251,7 +184,7 @@ $sourceIsNewer = (Test-Path -LiteralPath $bundledWrapper) -and
     (Test-Path -LiteralPath $wrapperSource) -and
     ((Get-Item -LiteralPath $wrapperSource).LastWriteTimeUtc -gt
      (Get-Item -LiteralPath $bundledWrapper).LastWriteTimeUtc)
-if ($bundledVersion -ne 'codex-jumpbridge 1.4.1' -or $sourceIsNewer) {
+if ($bundledVersion -ne 'codex-jumpbridge 1.4.2' -or $sourceIsNewer) {
     & (Join-Path $PSScriptRoot 'build.ps1') | Out-Null
     Write-Step 'OK' 'Built Codex JumpBridge'
 } else {
@@ -264,7 +197,7 @@ $backupDir = Join-Path $configDir 'backup'
 New-Item -ItemType Directory -Force -Path $binDir, $configDir, $backupDir | Out-Null
 
 $targetSsh = Join-Path $binDir 'ssh.exe'
-$expectedVersion = 'codex-jumpbridge 1.4.1'
+$expectedVersion = 'codex-jumpbridge 1.4.2'
 $installedVersion = if (Test-Path -LiteralPath $targetSsh) {
     ((& $targetSsh --codex-jumpbridge-version 2>$null) | Out-String).Trim()
 } else {
@@ -409,7 +342,6 @@ if (-not $ProxyUrl -and -not $SkipSetup) {
 $remotePreparePath = $remotePrepareSource
 foreach ($alias in $HostAlias) {
     Invoke-RemotePrepare -Wrapper $targetSsh -Alias $alias -ScriptPath $remotePreparePath
-    Install-RemoteHistorySync -Wrapper $targetSsh -Alias $alias -ScriptPath $historySyncSource
 }
 
 if (-not $SkipDoctor) {

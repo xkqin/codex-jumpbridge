@@ -28,25 +28,13 @@ jobs:
               $errors | Format-List
               exit 1
             }
-            if ($file -eq 'windows/install.ps1') {
-              $tokenFunction = $ast.Find({
-                param($node)
-                $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
-                  $node.Name -eq 'Get-HostToken'
-              }, $true)
-              if (-not $tokenFunction) { throw 'Get-HostToken was not found' }
-              . ([scriptblock]::Create($tokenFunction.Extent.Text))
-              if ((Get-HostToken 'jump-T208-Ci') -ne '8c9a24a9') {
-                throw 'Windows installer Host token does not match the wrapper'
-              }
-            }
           }
       - name: Build Windows wrapper
         shell: powershell
         run: |
           .\windows\build.ps1
           $version = .\windows\codex-jumpbridge.exe --codex-jumpbridge-version
-          if ($version -ne 'codex-jumpbridge 1.4.1') {
+          if ($version -ne 'codex-jumpbridge 1.4.2') {
             throw "Unexpected version: $version"
           }
       - name: Rewrite current Codex Desktop SSH payload safely
@@ -72,10 +60,14 @@ jobs:
             throw 'Desktop startup gate was not extracted intact'
           }
           if ($rewritten.Contains($gate)) {
-            throw 'Desktop startup gate remained trapped inside history setup'
+            throw 'Desktop startup gate remained trapped inside proxy setup'
           }
           if (-not $rewritten.Contains('exec codex app-server proxy --sock')) {
             throw 'Host-scoped app-server proxy was not inserted'
+          }
+          if ($rewritten.Contains('history-sync') -or
+              $rewritten.Contains('HISTORY_BUSY')) {
+            throw 'Runtime history locking was reintroduced'
           }
       - name: Preserve configured SSH alias spelling
         shell: powershell
@@ -109,6 +101,13 @@ jobs:
                       return 94;
                   }
                   string bootstrap = Console.In.ReadLine();
+                  if ((bootstrap ?? "").IndexOf(
+                      "history-sync", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                      (bootstrap ?? "").IndexOf(
+                      "HISTORY_BUSY", StringComparison.OrdinalIgnoreCase) >= 0)
+                  {
+                      return 90;
+                  }
                   const string markerPrefix = "__CODEX_T_SSH_START_";
                   int markerStart = (bootstrap ?? "").IndexOf(
                       markerPrefix,
@@ -222,7 +221,15 @@ jobs:
           }
       - name: Build Windows installer
         shell: powershell
-        run: .\windows\build-release.ps1 -OutputDirectory dist
+        run: |
+          if (Test-Path -LiteralPath 'shared\history-sync.py') {
+            throw 'Removed history lock helper is still present'
+          }
+          $builder = Get-Content -LiteralPath 'windows\build-release.ps1' -Raw
+          if ($builder -match 'history-sync') {
+            throw 'Windows package builder still references the history lock helper'
+          }
+          .\windows\build-release.ps1 -OutputDirectory dist
   macos:
     runs-on: macos-14
     steps:
@@ -234,6 +241,44 @@ jobs:
             macos/setup-macos.sh macos/doctor-macos.sh \
             macos/repair-thread-assignments.sh macos/uninstall.sh \
             shared/remote-prepare.sh
+      - name: Check native history migration
+        run: |
+          set -eu
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          export HOME="$work/home"
+          bundle="$HOME/.vscode-server/extensions/openai.chatgpt-fixture/bin/linux-x86_64"
+          mkdir -p "$bundle"
+          cat > "$bundle/codex" <<'EOF'
+          #!/bin/sh
+          if [ "$1" = '--version' ]; then
+            printf 'codex-cli fixture\n'
+          fi
+          EOF
+          cat > "$bundle/codex-code-mode-host" <<'EOF'
+          #!/bin/sh
+          exit 0
+          EOF
+          chmod 755 "$bundle/codex" "$bundle/codex-code-mode-host"
+
+          master="$HOME/.codex-jumpbridge/history/master"
+          native="$HOME/.codex"
+          mkdir -p "$master/sessions/2026/07/14" "$native/sessions/2026/07/14"
+          printf 'from-master\n' > "$master/sessions/2026/07/14/migrated.jsonl"
+          printf 'native-original\n' > "$native/sessions/2026/07/14/existing.jsonl"
+          printf 'master-would-overwrite\n' > "$master/sessions/2026/07/14/existing.jsonl"
+          printf '%s\n' '{"id":"migrated-id"}' > "$master/session_index.jsonl"
+          printf '%s\n' '{"id":"native-id"}' > "$native/session_index.jsonl"
+
+          bash shared/remote-prepare.sh > "$work/first.out"
+          grep -q 'CODEX_JUMPBRIDGE_NATIVE_HISTORY=MIGRATED' "$work/first.out"
+          test "$(cat "$native/sessions/2026/07/14/migrated.jsonl")" = 'from-master'
+          test "$(cat "$native/sessions/2026/07/14/existing.jsonl")" = 'native-original'
+          grep -q '"id":"migrated-id"' "$native/session_index.jsonl"
+          test -f "$native/.jumpbridge-native-history-v1.4.2"
+
+          bash shared/remote-prepare.sh > "$work/second.out"
+          test "$(grep -c '"id":"migrated-id"' "$native/session_index.jsonl")" -eq 1
       - name: Exercise wrapper with the macOS system Bash
         run: |
           set -eu
@@ -242,7 +287,7 @@ jobs:
             exit 1
           fi
           test "$(/bin/bash macos/codex-jumpbridge.sh --codex-jumpbridge-version)" = \
-            'codex-jumpbridge 1.4.1'
+            'codex-jumpbridge 1.4.2'
 
           functions="$(sed -n '/^posix_quote()/,/^make_token()/p' \
             macos/codex-jumpbridge.sh | sed '$d')"
@@ -267,7 +312,7 @@ jobs:
           test "$2" = 'sh' || exit 95
           IFS= read -r bootstrap
           case "$bootstrap" in
-            *'__SECURE_RUN__'*|*'>codex app-server proxy2'*|*'codex app-server proxycodex'*)
+            *'__SECURE_RUN__'*|*'>codex app-server proxy2'*|*'codex app-server proxycodex'*|*history-sync*|*HISTORY_BUSY*)
               exit 93
               ;;
           esac
@@ -300,26 +345,5 @@ jobs:
           set -e
           test "$rc" -eq 87
           test ! -s "$work/busy"
-      - name: Check history isolation helper
-        run: |
-          python3 -m py_compile shared/history-sync.py
-          python3 shared/history-sync.py --version
-          python3 shared/history-sync.py preflight
-          history_home="$(mktemp -d)"
-          trap 'rm -rf "$history_home"' EXIT
-          mkdir -p "$history_home/.codex/sessions/2026/07/14"
-          printf '%s\n' '{"timestamp":"2026-07-14T00:00:00Z","id":"fixture"}' \
-            > "$history_home/.codex/sessions/2026/07/14/fixture.jsonl"
-          HOME="$history_home" python3 shared/history-sync.py prepare fixture \
-            | grep -q 'CODEX_JUMPBRIDGE_HISTORY_PREPARE=READY'
-          copied="$history_home/.codex-jumpbridge/history/master/sessions/2026/07/14/fixture.jsonl"
-          test -f "$copied"
-          before_inode="$(stat -f '%i' "$copied")"
-          HOME="$history_home" python3 shared/history-sync.py prepare fixture \
-            | grep -q 'CODEX_JUMPBRIDGE_HISTORY_PREPARE=READY'
-          after_inode="$(stat -f '%i' "$copied")"
-          test "$before_inode" = "$after_inode"
-          HOME="$history_home" python3 shared/history-sync.py run fixture -- \
-            /bin/sh -c 'test "$CODEX_HOME" = "$HOME/.codex-jumpbridge/history/master"'
       - name: Build macOS app and disk image
-        run: bash macos/build-app.sh 1.4.1 dist
+        run: bash macos/build-app.sh 1.4.2 dist

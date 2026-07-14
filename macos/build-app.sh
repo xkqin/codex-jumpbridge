@@ -2,7 +2,7 @@
 
 set -eu
 
-VERSION="${1:-1.4.1}"
+VERSION="${1:-1.4.2}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 OUTPUT_DIR="${2:-${ROOT}/dist}"
@@ -38,14 +38,11 @@ for name in \
 done
 cp "${ROOT}/shared/remote-prepare.sh" \
     "${RESOURCES_DIR}/shared/remote-prepare.sh"
-cp "${ROOT}/shared/history-sync.py" \
-    "${RESOURCES_DIR}/shared/history-sync.py"
 
 chmod 755 \
     "${MACOS_DIR}/CodexJumpBridge" \
     "${RESOURCES_DIR}/macos/"*.sh \
-    "${RESOURCES_DIR}/shared/remote-prepare.sh" \
-    "${RESOURCES_DIR}/shared/history-sync.py"
+    "${RESOURCES_DIR}/shared/remote-prepare.sh"
 
 cat >"${CONTENTS_DIR}/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>

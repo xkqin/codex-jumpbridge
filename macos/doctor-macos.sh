@@ -169,12 +169,11 @@ else
     fail 'Remote Codex was not found in VS Code/Cursor or ~/.local/bin'
 fi
 
-history_probe="$($WRAPPER "$HOST_ALIAS" 'test -x "$HOME/.local/bin/codex-jumpbridge-history-sync" && "$HOME/.local/bin/codex-jumpbridge-history-sync" status && "$HOME/.local/bin/codex-jumpbridge-history-sync" preflight' 2>/dev/null || true)"
-if printf '%s' "$history_probe" | grep -q 'CODEX_JUMPBRIDGE_HISTORY_SYNC=1\.4\.1' &&
-    printf '%s' "$history_probe" | grep -q 'CODEX_JUMPBRIDGE_HISTORY_PREFLIGHT=READY'; then
-    report OK 'Remote shared history coordination is ready'
+native_home_probe="$($WRAPPER "$HOST_ALIAS" 'umask 077; mkdir -p "$HOME/.codex" && test -w "$HOME/.codex" && printf "CODEX_JUMPBRIDGE_NATIVE_CODEX_HOME=READY\n"' 2>/dev/null || true)"
+if printf '%s' "$native_home_probe" | grep -q 'CODEX_JUMPBRIDGE_NATIVE_CODEX_HOME=READY'; then
+    report OK 'Remote native ~/.codex home is ready (no history lock)'
 else
-    fail 'Remote shared history helper is missing; rerun install.sh'
+    fail 'Remote native ~/.codex home is unavailable or not writable'
 fi
 
 proxy_url="$(read_proxy "$HOST_ALIAS" 2>/dev/null || true)"

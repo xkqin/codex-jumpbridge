@@ -4,7 +4,7 @@
 
 set -u
 
-VERSION='1.4.1'
+VERSION='1.4.2'
 REAL_SSH="${CODEX_JUMPBRIDGE_REAL_SSH:-/usr/bin/ssh}"
 CONFIG_DIR="${HOME}/.codex-jumpbridge"
 HOSTS_FILE="${CONFIG_DIR}/hosts.txt"
@@ -264,30 +264,6 @@ make_host_token() {
     printf '%08x' "$hash"
 }
 
-host_priority_delay() {
-    local target="$1"
-    local index=0
-    local line
-    if [ -f "$HOSTS_FILE" ]; then
-        while IFS= read -r line || [ -n "$line" ]; do
-            line="${line#${line%%[![:space:]]*}}"
-            line="${line%${line##*[![:space:]]}}"
-            case "$line" in
-                ''|'#'*) continue ;;
-            esac
-            if [ "$line" = "$target" ]; then
-                if [ "$index" -gt 3 ]; then
-                    index=3
-                fi
-                printf '%s' "$((index * 2))"
-                return 0
-            fi
-            index=$((index + 1))
-        done < "$HOSTS_FILE"
-    fi
-    printf '0'
-}
-
 host_scoped_proxy_command() {
     local host_token="$1"
     local enable_remote_mcp="$2"
@@ -363,7 +339,6 @@ if [ "$is_streaming" -eq 0 ] &&
     remote_command="CODEX_SSH_SKIP_APP_SERVER_BOOT=true ${remote_command}"
 fi
 
-history_busy_marker=''
 if [ "$is_streaming" -eq 1 ]; then
     host_token="$(make_host_token "$host_alias")"
     enable_remote_mcp=0
@@ -391,14 +366,6 @@ if [ "$is_streaming" -eq 1 ]; then
         remote_suffix="${remote_command#*"$proxy_placeholder"}"
         remote_command="${remote_prefix}${proxy_command}${remote_suffix}"
     fi
-    history_helper='${HOME}/.local/bin/codex-jumpbridge-history-sync'
-    quoted_history_command="$(posix_quote "$remote_command")"
-    priority_delay="$(host_priority_delay "$host_alias")"
-    delay_command=''
-    if [ "$priority_delay" -gt 0 ]; then
-        delay_command="if [ \"\${CODEX_JUMPBRIDGE_DISABLE_PRIORITY_DELAY:-0}\" != \"1\" ]; then sleep ${priority_delay}; fi; "
-    fi
-    remote_command="if [ -x \"${history_helper}\" ] && [ \"\${CODEX_JUMPBRIDGE_DISABLE_HISTORY_SYNC:-0}\" != \"1\" ] && \"${history_helper}\" preflight >/dev/null 2>&1; then ${delay_command}CODEX_JUMPBRIDGE_EXPECT_APP_SERVER=1 CODEX_JUMPBRIDGE_BUSY_MARKER=$(posix_quote "$history_busy_marker") \"${history_helper}\" run ${host_token} -- /bin/sh -c ${quoted_history_command}; __codex_jb_history_rc=\$?; exit \"\$__codex_jb_history_rc\"; else exec /bin/sh -c ${quoted_history_command}; fi"
     if [ -n "$desktop_startup_gate" ]; then
         remote_command="${desktop_startup_gate}; ${remote_command}"
     fi

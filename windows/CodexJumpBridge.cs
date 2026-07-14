@@ -30,7 +30,7 @@ internal static class CodexJumpBridge
             (args[0] == "--codex-jumpbridge-version" ||
              args[0] == "--codex-t-wrapper-version"))
         {
-            Console.WriteLine("codex-jumpbridge 1.4.1");
+            Console.WriteLine("codex-jumpbridge 1.4.2");
             return 0;
         }
 
@@ -247,10 +247,6 @@ internal static class CodexJumpBridge
             remoteCommand.IndexOf(
                 "app-server --listen unix://",
                 StringComparison.Ordinal) >= 0;
-        string historyBusyMarker = isStreamingProxy
-            ? "__CODEX_JUMPBRIDGE_HISTORY_BUSY_" +
-              Guid.NewGuid().ToString("N") + "__"
-            : null;
         if (isDesktopBootstrap)
         {
             remoteCommand = SuppressDesktopBootstrap(remoteCommand);
@@ -263,10 +259,6 @@ internal static class CodexJumpBridge
                 hostAlias,
                 RemoteMcpAliases.Contains(hostAlias),
                 out desktopStartupGate);
-            remoteCommand = AddHistoryIsolation(
-                remoteCommand,
-                hostAlias,
-                historyBusyMarker);
             if (desktopStartupGate != null)
             {
                 remoteCommand = desktopStartupGate + "; " + remoteCommand;
@@ -300,7 +292,7 @@ internal static class CodexJumpBridge
                     Console.OpenStandardOutput(),
                     startMarker,
                     isStreamingProxy ? null : completionPrefix,
-                    historyBusyMarker);
+                    null);
                 Thread stdoutThread = stdoutRelay.Start();
                 Thread stderrThread = StartCopyThread(
                     child.StandardError.BaseStream,
@@ -694,43 +686,6 @@ internal static class CodexJumpBridge
             command.Append(PosixSingleQuote(word));
         }
         return command.ToString();
-    }
-
-    private static string AddHistoryIsolation(
-        string remoteCommand,
-        string hostAlias,
-        string busyMarker)
-    {
-        string token = BuildHostToken(hostAlias);
-        int priority = 0;
-        for (int i = 0; i < TClusterHostOrder.Count; i++)
-        {
-            if (String.Equals(
-                TClusterHostOrder[i], hostAlias, StringComparison.OrdinalIgnoreCase))
-            {
-                priority = i;
-                break;
-            }
-        }
-        int delaySeconds = Math.Min(priority * 2, 6);
-        string helper = "$HOME/.local/bin/codex-jumpbridge-history-sync";
-        string delay = delaySeconds > 0
-            ? "if [ \"${CODEX_JUMPBRIDGE_DISABLE_PRIORITY_DELAY:-0}\" != \"1\" ]; " +
-              "then sleep " + delaySeconds + "; fi; "
-            : String.Empty;
-        string quotedCommand = PosixSingleQuote(remoteCommand);
-
-        return "if [ -x \"" + helper + "\" ] " +
-            "&& [ \"${CODEX_JUMPBRIDGE_DISABLE_HISTORY_SYNC:-0}\" != \"1\" ] " +
-            "&& \"" + helper + "\" preflight >/dev/null 2>&1; then " +
-            delay +
-            "CODEX_JUMPBRIDGE_EXPECT_APP_SERVER=1 " +
-            "CODEX_JUMPBRIDGE_BUSY_MARKER=" + PosixSingleQuote(busyMarker) + " " +
-            "\"" + helper + "\" run " + token +
-            " -- /bin/sh -c " + quotedCommand + "; " +
-            "__codex_jb_history_rc=$?; " +
-            "exit \"$__codex_jb_history_rc\"; " +
-            "else exec /bin/sh -c " + quotedCommand + "; fi";
     }
 
     private static string SuppressDesktopBootstrap(string remoteCommand)

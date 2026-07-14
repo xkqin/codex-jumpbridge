@@ -190,16 +190,14 @@ if ($LASTEXITCODE -eq 0 -and $codexProbe -match 'codex') {
     Fail 'Remote Codex was not found in ~/.local/bin or PATH'
 }
 
-$historyProbe = & $wrapper $HostAlias (
-    'test -x "$HOME/.local/bin/codex-jumpbridge-history-sync" && ' +
-    '"$HOME/.local/bin/codex-jumpbridge-history-sync" status && ' +
-    '"$HOME/.local/bin/codex-jumpbridge-history-sync" preflight') 2>$null
+$nativeHomeProbe = & $wrapper $HostAlias (
+    'umask 077; mkdir -p "$HOME/.codex" && test -w "$HOME/.codex" && ' +
+    'printf "CODEX_JUMPBRIDGE_NATIVE_CODEX_HOME=READY\n"') 2>$null
 if ($LASTEXITCODE -eq 0 -and
-    $historyProbe -match 'CODEX_JUMPBRIDGE_HISTORY_SYNC=1\.4\.1' -and
-    $historyProbe -match 'CODEX_JUMPBRIDGE_HISTORY_PREFLIGHT=READY') {
-    Report 'OK' 'Remote shared history coordination is ready'
+    $nativeHomeProbe -match 'CODEX_JUMPBRIDGE_NATIVE_CODEX_HOME=READY') {
+    Report 'OK' 'Remote native ~/.codex home is ready (no history lock)'
 } else {
-    Fail 'Remote shared history helper is missing; rerun install.ps1'
+    Fail 'Remote native ~/.codex home is unavailable or not writable'
 }
 
 $proxyUrl = $null

@@ -21,11 +21,60 @@ find_editor_codex() {
         2>/dev/null | sort -r
 }
 
+migrate_native_history() {
+    legacy_master="${HOME}/.codex-jumpbridge/history/master"
+    native_home="${HOME}/.codex"
+    marker="${native_home}/.jumpbridge-native-history-v1.4.2"
+
+    [ -d "$legacy_master" ] || return 0
+    [ -f "$marker" ] && return 0
+    umask 077
+    mkdir -p "$native_home"
+
+    for tree in sessions archived_sessions; do
+        source_tree="${legacy_master}/${tree}"
+        target_tree="${native_home}/${tree}"
+        [ -d "$source_tree" ] || continue
+        mkdir -p "$target_tree"
+        while IFS= read -r relative; do
+            source_file="${source_tree}/${relative#./}"
+            target_file="${target_tree}/${relative#./}"
+            [ -e "$target_file" ] && continue
+            mkdir -p "$(dirname "$target_file")" || return 1
+            cp -p "$source_file" "$target_file" || return 1
+        done < <(cd "$source_tree" && find . -type f -print) || return 1
+    done
+
+    master_index="${legacy_master}/session_index.jsonl"
+    native_index="${native_home}/session_index.jsonl"
+    if [ -f "$master_index" ]; then
+        touch "$native_index"
+        while IFS= read -r record || [ -n "$record" ]; do
+            [ -n "$record" ] || continue
+            thread_id="$(printf '%s\n' "$record" | sed -n \
+                's/.*"\(id\|thread_id\)"[[:space:]]*:[[:space:]]*"\([0-9A-Fa-f-]*\)".*/\2/p')"
+            if [ -n "$thread_id" ] && grep -Eq \
+                '"(id|thread_id)"[[:space:]]*:[[:space:]]*"'"$thread_id"'"' \
+                "$native_index"; then
+                continue
+            fi
+            printf '%s\n' "$record" >> "$native_index"
+        done < "$master_index"
+    fi
+
+    : > "$marker"
+    printf 'CODEX_JUMPBRIDGE_NATIVE_HISTORY=MIGRATED\n'
+}
+
 codex_version() {
     "$1" --version 2>/dev/null | head -n 1
 }
 
 mkdir -p "$LOCAL_BIN"
+migrate_native_history || {
+    printf 'CODEX_JUMPBRIDGE_NATIVE_HISTORY=FAILED\n' >&2
+    exit 7
+}
 HOME_REAL="$(readlink -f "$HOME" 2>/dev/null || printf '%s' "$HOME")"
 
 selected=''

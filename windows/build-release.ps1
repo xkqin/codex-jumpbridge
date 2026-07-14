@@ -1,5 +1,5 @@
 param(
-    [string]$Version = '1.4.1',
+    [string]$Version = '1.4.2',
     [string]$OutputDirectory = (Join-Path (Split-Path $PSScriptRoot -Parent) 'dist')
 )
 
@@ -39,9 +39,6 @@ try {
     }
     Copy-Item -LiteralPath (Join-Path $root 'shared\remote-prepare.sh') `
         -Destination $payloadShared -Force
-    Copy-Item -LiteralPath (Join-Path $root 'shared\history-sync.py') `
-        -Destination $payloadShared -Force
-
     foreach ($script in Get-ChildItem -LiteralPath $payloadWindows -Filter '*.ps1') {
         $parseErrors = $null
         [void][Management.Automation.Language.Parser]::ParseFile(
