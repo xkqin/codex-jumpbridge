@@ -22,7 +22,11 @@ try {
     $keyPath = Join-Path $fakeHome '.ssh\id_fixture'
     [IO.File]::WriteAllText($keyPath, 'fixture', [Text.UTF8Encoding]::new($false))
     $sshConfig = @"
-Host jump-T208-CI
+Host T209
+    HostName 127.0.0.1
+    User ci
+    IdentityFile $($keyPath.Replace('\', '/'))
+Host h-ceph
     HostName 127.0.0.1
     User ci
     IdentityFile $($keyPath.Replace('\', '/'))
@@ -51,7 +55,7 @@ internal static class FakeSsh
             return 0;
         }
         if (args.Length != 2 ||
-            !String.Equals(args[0], "jump-T208-CI", StringComparison.OrdinalIgnoreCase) ||
+            !String.Equals(args[0], "T209", StringComparison.OrdinalIgnoreCase) ||
             args[1] != "sh")
         {
             return 94;
@@ -122,17 +126,16 @@ internal static class FakeSsh
     $env:HOME = $fakeHome
     $env:CODEX_JUMPBRIDGE_REAL_SSH = $fakeSsh
     $env:CODEX_JUMPBRIDGE_FAKE_LOG = $fakeLog
-    $env:CODEX_JUMPBRIDGE_HOSTS = 'jump-T208-CI'
+    $env:CODEX_JUMPBRIDGE_HOSTS = 'T209'
     Set-Variable HOME -Value $fakeHome -Force
     & (Join-Path $root 'windows\install.ps1') `
-        -HostAlias 'jump-T208-CI' `
         -ProxyUrl 'http://proxy.invalid:8080'
 
     $installed = Join-Path $fakeHome '.local\bin\ssh.exe'
     if (-not (Test-Path -LiteralPath $installed)) {
         throw 'Clean Windows install did not create ~/.local/bin/ssh.exe'
     }
-    $remoteProbe = & $installed jump-T208-CI 'printf CI_PROBE' 2>&1
+    $remoteProbe = & $installed T209 'printf CI_PROBE' 2>&1
     if (($remoteProbe | Out-String) -notmatch 'CODEX_JUMPBRIDGE_CODE_MODE_HOST=READY') {
         $logText = if (Test-Path -LiteralPath $fakeLog) {
             Get-Content -LiteralPath $fakeLog -Raw
@@ -140,15 +143,15 @@ internal static class FakeSsh
         throw "Installed Windows wrapper did not reach the SSH fixture. output=$remoteProbe log=$logText"
     }
     $version = (& $installed --codex-jumpbridge-version | Out-String).Trim()
-    if ($version -ne 'codex-jumpbridge 1.4.4') {
+    if ($version -ne 'codex-jumpbridge 1.4.5') {
         throw "Unexpected clean-install version: $version"
     }
     $hosts = @(Get-Content -LiteralPath (Join-Path $fakeHome '.codex-jumpbridge\hosts.txt'))
-    if ($hosts.Count -ne 1 -or $hosts[0] -ne 'jump-T208-CI') {
+    if ($hosts.Count -ne 1 -or $hosts[0] -ne 'T209') {
         throw "Clean Windows install wrote unexpected Hosts: $($hosts -join ', ')"
     }
     $proxy = Get-Content -LiteralPath (Join-Path $fakeHome '.codex-jumpbridge\proxies.txt') -Raw
-    if ($proxy -notmatch '^jump-T208-CI\thttp://proxy\.invalid:8080') {
+    if ($proxy -notmatch '^T209\thttp://proxy\.invalid:8080') {
         throw 'Clean Windows install did not persist the per-Host proxy'
     }
     if (Test-Path -LiteralPath (Join-Path $fakeHome '.local\bin\codex-jumpbridge-history-sync')) {

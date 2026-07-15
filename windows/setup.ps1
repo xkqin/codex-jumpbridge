@@ -44,7 +44,7 @@ function Get-SshAliases {
 }
 
 function Test-TClusterAlias([string]$Alias) {
-    if ($Alias -match '(?i)^jump[-_]t[0-9]+(?:[-_]|$)') {
+    if ($Alias -match '(?i)t(?:208|209|210)') {
         return $true
     }
     if (-not (Test-Path -LiteralPath $realSshPath)) {

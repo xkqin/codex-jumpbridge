@@ -4,7 +4,7 @@
 
 set -u
 
-VERSION='1.4.4'
+VERSION='1.4.5'
 REAL_SSH="${CODEX_JUMPBRIDGE_REAL_SSH:-/usr/bin/ssh}"
 CONFIG_DIR="${HOME}/.codex-jumpbridge"
 HOSTS_FILE="${CONFIG_DIR}/hosts.txt"

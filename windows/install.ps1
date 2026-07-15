@@ -110,7 +110,7 @@ function Test-TClusterAlias(
     [string]$SshPath,
     [string]$ConfigPath
 ) {
-    if ($Alias -match '(?i)^jump[-_]t[0-9]+(?:[-_]|$)') {
+    if ($Alias -match '(?i)t(?:208|209|210)') {
         return $true
     }
     $expanded = & $SshPath -F $ConfigPath -G $Alias 2>$null
@@ -196,7 +196,7 @@ $sourceIsNewer = (Test-Path -LiteralPath $bundledWrapper) -and
     (Test-Path -LiteralPath $wrapperSource) -and
     ((Get-Item -LiteralPath $wrapperSource).LastWriteTimeUtc -gt
      (Get-Item -LiteralPath $bundledWrapper).LastWriteTimeUtc)
-if ($bundledVersion -ne 'codex-jumpbridge 1.4.4' -or $sourceIsNewer) {
+if ($bundledVersion -ne 'codex-jumpbridge 1.4.5' -or $sourceIsNewer) {
     & (Join-Path $PSScriptRoot 'build.ps1') | Out-Null
     Write-Step 'OK' 'Built Codex JumpBridge'
 } else {
@@ -209,7 +209,7 @@ $backupDir = Join-Path $configDir 'backup'
 New-Item -ItemType Directory -Force -Path $binDir, $configDir, $backupDir | Out-Null
 
 $targetSsh = Join-Path $binDir 'ssh.exe'
-$expectedVersion = 'codex-jumpbridge 1.4.4'
+$expectedVersion = 'codex-jumpbridge 1.4.5'
 $installedVersion = if (Test-Path -LiteralPath $targetSsh) {
     ((& $targetSsh --codex-jumpbridge-version 2>$null) | Out-String).Trim()
 } else {

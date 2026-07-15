@@ -81,7 +81,7 @@ ssh_aliases() {
 is_t_cluster_alias() {
     local alias="$1"
     local expanded remote_user
-    if printf '%s' "$alias" | grep -Eqi '^jump[-_]t[0-9]+([-_]|$)'; then
+    if printf '%s' "$alias" | grep -Eqi 't(208|209|210)'; then
         return 0
     fi
     expanded="$(/usr/bin/ssh -F "$SSH_CONFIG" -G "$alias" 2>/dev/null || true)"

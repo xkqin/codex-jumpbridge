@@ -1,3 +1,15 @@
+## Codex JumpBridge 1.4.5
+
+本版本让团队中不同命名习惯的 T 集群 SSH Host 能够被稳定自动识别：
+
+- Windows 与 macOS 现在会识别 alias 任意位置包含 `t208`、`t209` 或 `t210` 的 Host，且不区分大小写。
+- `t208-my`、`wangxiaohu-t208`、`jump-T209-user` 等命名均可自动配置；`t211` 与普通 Host 不会按名称匹配。
+- README 在 Codex 一句话安装之前新增醒目 Warning，明确要求检查 `~/.ssh/config` 的 `Host` 别名，而不是 `HostName` 地址。
+- Windows/macOS 干净安装测试覆盖无 `jump` 前缀的别名，并确认普通 `h-ceph` Host 不会被误识别。
+
+- **Windows 10/11：**运行 `Codex-JumpBridge-Windows-v1.4.5.exe`。
+- **macOS 11+：**打开 `Codex-JumpBridge-macOS-v1.4.5.dmg`，将 App 拖入“应用程序”后运行。
+
 ## Codex JumpBridge 1.4.4
 
 本版本仅修复 macOS 安装与 doctor 进程回收问题，不改变集群节点路由策略：

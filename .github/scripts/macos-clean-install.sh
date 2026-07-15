@@ -23,7 +23,11 @@ mkdir -p "${HOME}/.ssh" "${HOME}/.local/bin" "${HOME}/Library/LaunchAgents"
 printf 'fixture\n' > "${HOME}/.ssh/id_fixture"
 chmod 600 "${HOME}/.ssh/id_fixture"
 cat > "${HOME}/.ssh/config" <<EOF
-Host jump-T208-CI
+Host t210
+    HostName 127.0.0.1
+    User ci
+    IdentityFile ${HOME}/.ssh/id_fixture
+Host h-ceph
     HostName 127.0.0.1
     User ci
     IdentityFile ${HOME}/.ssh/id_fixture
@@ -57,7 +61,7 @@ if [ "${1:-}" = '-G' ]; then
     printf '%s\n' 'hostname 127.0.0.1' 'user ci'
     exit 0
 fi
-if [ "$#" -ne 2 ] || [ "${1}" != 'jump-T208-CI' ] || [ "${2}" != 'sh' ]; then
+if [ "$#" -ne 2 ] || [ "${1}" != 't210' ] || [ "${2}" != 'sh' ]; then
     exit 94
 fi
 IFS= read -r bootstrap
@@ -97,9 +101,9 @@ bash "${ROOT}/macos/install.sh" \
 grep -q 'Status: READY' "${WORK}/install.out"
 test -x "${HOME}/.local/bin/ssh"
 test "$("${HOME}/.local/bin/ssh" --codex-jumpbridge-version)" = \
-    'codex-jumpbridge 1.4.4'
-test "$(cat "${HOME}/.codex-jumpbridge/hosts.txt")" = 'jump-T208-CI'
-grep -q $'^jump-T208-CI\thttp://proxy\.invalid:8080$' \
+    'codex-jumpbridge 1.4.5'
+test "$(cat "${HOME}/.codex-jumpbridge/hosts.txt")" = 't210'
+grep -q $'^t210\thttp://proxy\.invalid:8080$' \
     "${HOME}/.codex-jumpbridge/proxies.txt"
 test -f "${HOME}/Library/LaunchAgents/com.xkqin.codex-jumpbridge-path.plist"
 test ! -e "${HOME}/.local/bin/codex-jumpbridge-history-sync"

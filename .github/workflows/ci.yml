@@ -35,7 +35,7 @@ jobs:
         run: |
           .\windows\build.ps1
           $version = .\windows\codex-jumpbridge.exe --codex-jumpbridge-version
-          if ($version -ne 'codex-jumpbridge 1.4.4') {
+          if ($version -ne 'codex-jumpbridge 1.4.5') {
             throw "Unexpected version: $version"
           }
       - name: Rewrite current Codex Desktop SSH payload safely
@@ -292,7 +292,7 @@ jobs:
             exit 1
           fi
           test "$(/bin/bash macos/codex-jumpbridge.sh --codex-jumpbridge-version)" = \
-            'codex-jumpbridge 1.4.4'
+            'codex-jumpbridge 1.4.5'
 
           functions="$(sed -n '/^posix_quote()/,/^make_token()/p' \
             macos/codex-jumpbridge.sh | sed '$d')"
@@ -351,6 +351,6 @@ jobs:
           test "$rc" -eq 87
           test ! -s "$work/busy"
       - name: Build macOS app and disk image
-        run: bash macos/build-app.sh 1.4.4 dist
+        run: bash macos/build-app.sh 1.4.5 dist
       - name: Install macOS from zero and run doctor
         run: bash .github/scripts/macos-clean-install.sh

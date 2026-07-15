@@ -17,7 +17,8 @@ Codex JumpBridge 是按需启动的 SSH 兼容层，不是后台服务。它把 
 的远程命令转换成 T 集群网关能够接受的 `sh + stdin`，并保持 app-server 的
 双向数据流。安装时会自动启用 `~/.ssh/config` 中识别到的全部 T 集群跳板别名；
 普通 SSH Host 继续由系统 OpenSSH 直连，不受影响。支持 Windows 与 macOS。
-识别依据 SSH alias 的 `jump-t...` 命名或 `ssh -G` 展开后的多段 User 路由格式；
+识别依据 SSH alias 中任意位置出现的 `t208`/`t209`/`t210`（不区分大小写，
+可带或不带 `jump`），或 `ssh -G` 展开后的多段 User 路由格式；
 安装器不会记录、展示或提交跳板地址和后端节点地址。
 
 ## 验证效果
@@ -32,6 +33,12 @@ Codex JumpBridge 是按需启动的 SSH 兼容层，不是后台服务。它把 
 </p>
 
 ## 如何安装
+
+> [!WARNING]
+> **安装前请先检查 `~/.ssh/config` 的 `Host` 别名。** 要自动识别 T 集群连接，别名中
+> 必须包含 `t208`、`t209` 或 `t210` 之一（不区分大小写），例如 `Host t208-my` 或
+> `Host jump-T209-user`。这里指 `Host` 行的别名，不是 `HostName` 地址；不符合该命名
+> 要求的连接不会被安装器自动识别。
 
 ### 方式一：交给 Codex 安装（推荐）
 
@@ -111,8 +118,8 @@ Status: READY
 
 也可以打开 [GitHub Releases](https://github.com/xkqin/codex-jumpbridge/releases/latest)：
 
-- **Windows 10/11：**下载并双击 `Codex-JumpBridge-Windows-v1.4.4.exe`。
-- **macOS 11+：**下载 `Codex-JumpBridge-macOS-v1.4.4.dmg`，将 App 拖入“应用程序”后运行。
+- **Windows 10/11：**下载并双击 `Codex-JumpBridge-Windows-v1.4.5.exe`。
+- **macOS 11+：**下载 `Codex-JumpBridge-macOS-v1.4.5.dmg`，将 App 拖入“应用程序”后运行。
 
 > [!WARNING]
 > **内部使用版本仅进行 ad-hoc 签名，未进行 Apple Developer ID 公证。** 请只从本仓库 Release 下载，并先核对
@@ -248,7 +255,7 @@ app-server，不会删除或改写 `~/.codex/config.toml` 中的 MCP 配置。
 
 `v1.4.2+` 不使用历史互斥锁，多个 Host 可以同时连接。若升级后仍看到退出码 87 或
 “SSH 连接失败”，请完全退出并重新打开 Codex Desktop，确认 `ssh --codex-jumpbridge-version`
-显示 `1.4.4`，再逐个运行 doctor 检查 SSH、远端运行文件和代理。
+显示 `1.4.5`，再逐个运行 doctor 检查 SSH、远端运行文件和代理。
 
 ### Q：提示缺少 SSH 私钥怎么办？
 
@@ -263,3 +270,7 @@ app-server，不会删除或改写 `~/.codex/config.toml` 中的 MCP 配置。
 - macOS：`./macos/install.sh --host <SSH Host>`
 
 `HostAlias` 只写入本机 JumpBridge 配置，不会提交到仓库。
+
+## 仍需帮助
+
+如果按以上 Q&A 排查后仍有问题，请在飞书联系：`qinxukun`。
